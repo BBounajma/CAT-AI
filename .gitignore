@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Jupyter
+.ipynb_checkpoints/
+
+# PyTorch / Lightning
+lightning_logs/
+*.ckpt
+
+# Models / artifacts
+*.pkl
+*.pt
+*.pth
+*.onnx
+
+# Data artifacts
+Data/processed_*
+Data/*.pkl
+Data/*.xlsx
+Data/*.csv
+
+# Environments
+.venv/

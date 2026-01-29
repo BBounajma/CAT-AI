@@ -24,7 +24,11 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 data_path = os.path.join(script_dir, 'Data', 'data2.csv')
 
 print(f"Loading data from: {data_path}")
-df = pd.read_csv(data_path)
+df = pd.read_csv(
+    data_path,
+    sep=';',
+    decimal=','
+)
 print(f"Loaded {len(df)} rows")
 print(f"Columns: {df.columns.tolist()[:5]}...")  # Print first 5 columns
 
@@ -113,6 +117,8 @@ pga_values = [float(f"{pga:.7f}") for pga in pga_values]
 # -----------------------
 df_new = df.copy()
 df_new['PGA_g'] = pga_values
+
+df_new.pop(df_new.columns[0])  # Remove the original distance column
 
 # -----------------------
 # 8. Save to new file

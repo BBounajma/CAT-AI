@@ -15,8 +15,8 @@ from deeptab.models import SAINTClassifier
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'Models'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'Data'))
 
-df=pd.read_csv(r"Data\new_data2.csv")
-
+#df=pd.read_csv(r"Data\new_data2.csv") local version
+df=pd.read_csv("/content/new_data2.csv") #colab version
 df.rename(columns={'roof_type(Bamboo/Timber-Heavy roof=0; Bamboo/Timber-Light roof=1; RCC/RB/RBC=2)':'roof_type','district_distance_to_earthquakecenter(mi)':'distance'}, inplace=True)
 
 num_cols=["PGA_g",
