@@ -15,7 +15,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, LabelEncoder, OrdinalEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split
-from deeptab.models import SAINTClassifier
+from deeptab.models import NDTFClassifier
 
 # Script path setup
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'Models'))
@@ -102,7 +102,19 @@ X_train, X_test, y_train, y_test = train_test_split(X_processed, y, test_size=0.
 X_train, X_valid, y_train, y_valid = train_test_split(X_train, y_train, test_size=0.3, random_state=42)
 
 # Initialize the SAINT classifier
-classifier = SAINTClassifier(d_model=32, n_heads=8, n_layers=3, attn_dropout=0.1)
+# Define your initialization parameters
+custom_params = {
+    "min_depth": 4,
+    "max_depth": 16,
+    "temperature": 0.1,
+    "node_sampling": 0.3,
+    "lamda": 0.3,
+    "n_ensembles": 12,
+    "penalty_factor": 1e-8,
+}
+
+# Initialize an instance of NDTFClassifier
+classifier = NDTFClassifier(**custom_params)
 
 # Train the classifier
 classifier.fit(X_train, y_train, X_val=X_valid, y_val=y_valid, max_epochs=10, batch_size=256)
@@ -117,13 +129,13 @@ joblib.dump(preprocessing_info, "preprocessor.joblib")
 print("Preprocessor saved to 'preprocessor.joblib'")
 
 # Save the trained classifier with joblib
-joblib.dump(classifier, "trained_saint_gpu.joblib")
-print("GPU classifier saved to 'trained_saint_gpu.joblib'")
+joblib.dump(classifier, "trained_ndtf_gpu.joblib")
+print("GPU classifier saved to 'trained_ndtf_gpu.joblib'")
 
 # Move model to CPU and save CPU version
 classifier.task_model.to('cpu')
-joblib.dump(classifier, "trained_saint_cpu.joblib")
-print("CPU classifier saved to 'trained_saint_cpu.joblib'")
+joblib.dump(classifier, "trained_ndtf_cpu.joblib")
+print("CPU classifier saved to 'trained_ndtf_cpu.joblib'")
 
 # Evaluate on test set
 print("\nEvaluating on test set...")
@@ -143,5 +155,5 @@ print("Training Complete!")
 print("="*70)
 print("\nSaved files:")
 print("  - preprocessor.joblib")
-print("  - trained_saint_gpu.joblib")
-print("  - trained_saint_cpu.joblib")
+print("  - trained_ndtf_gpu.joblib")
+print("  - trained_ndtf_cpu.joblib")
