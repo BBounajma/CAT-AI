@@ -79,7 +79,7 @@ X_train, X_valid, y_train, y_valid = train_test_split(X_train, y_train, test_siz
 
 classifier = SAINTClassifier(d_model=32, n_heads=8, n_layers=3, attn_dropout=0.1)
 
-classifier.fit(X_train, y_train, X_val=X_valid, y_val=y_valid, max_epochs=10, batch_size=64)
+classifier.fit(X_train, y_train, X_val=X_valid, y_val=y_valid, max_epochs=10, batch_size=256)
 
 joblib.dump(preprocessor, "preprocessor.joblib")
 joblib.dump(classifier, "saint_model.joblib")
