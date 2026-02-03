@@ -16,6 +16,7 @@ lightning_logs/
 *.pt
 *.pth
 *.onnx
+*.joblib
 
 # Data artifacts
 Data/processed_*
