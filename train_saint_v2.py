@@ -81,9 +81,10 @@ if __name__ == '__main__':
     tab_preprocessor = TabPreprocessor(
         cat_embed_cols=multi_class_cat_cols,
         continuous_cols=num_cols,
-        scale=True,
-        with_cls_token=True
+        cols_to_scale=num_cols,
+        with_cls_token=False
     )
+
 
     X_tab = tab_preprocessor.fit_transform(df)
     y = y.to_numpy()
@@ -102,14 +103,15 @@ if __name__ == '__main__':
     # SAINT + WideDeep model
     # ------------------------------------------------------------------
     saint = SAINT(
-        column_idx=tab_preprocessor.column_idx,
-        cat_embed_input=tab_preprocessor.cat_embed_input,
-        continuous_cols=num_cols,
-        input_dim=32,
-        n_heads=8,
-        n_blocks=3,
-        attn_dropout=0.1
-    )
+    column_idx=tab_preprocessor.column_idx,
+    cat_embed_input=tab_preprocessor.cat_embed_input,
+    continuous_cols=num_cols,
+    input_dim=16,
+    n_heads=2,
+    n_blocks=1,
+    attn_dropout=0.0
+)
+
 
     model = WideDeep(
         deeptabular=saint,
@@ -119,11 +121,19 @@ if __name__ == '__main__':
     # ------------------------------------------------------------------
     # Trainer
     # ------------------------------------------------------------------
+    class_weights = torch.tensor(
+        1.0 / np.bincount(y_train),
+        dtype=torch.float32
+    )
+    class_weights /= class_weights.sum()
+
     trainer = Trainer(
         model=model,
         objective="multiclass",
         metrics=[Accuracy],
+        class_weights=class_weights
     )
+
 
     # ------------------------------------------------------------------
     # Train
@@ -147,7 +157,7 @@ if __name__ == '__main__':
     # 2) Save model via Trainer (recommended)
     trainer.save(
         path="widedeep_saint_model",
-        save_state_dict=True
+        save_state_dict=False
     )
 
     # (This creates: widedeep_saint_model/model.pt)
