@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import sys
 import joblib
-import torch
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, LabelEncoder, OrdinalEncoder
