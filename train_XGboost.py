@@ -7,7 +7,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, LabelEncoder, OrdinalEncoder
 from sklearn.impute import SimpleImputer
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV
 from xgboost import XGBClassifier
 
 # Script path setup
@@ -94,17 +94,49 @@ X_processed = df_processed
 X_train, X_test, y_train, y_test = train_test_split(X_processed, y, test_size=0.3, random_state=42)
 X_train, X_valid, y_train, y_valid = train_test_split(X_train, y_train, test_size=0.3, random_state=42)
 
-# Train XGBoost Classifier
+# Hyperparameter Optimization for XGBoost using GridSearchCV
+print("Starting hyperparameter optimization for XGBoost...")
 
-xgb_model = XGBClassifier(use_label_encoder=False, eval_metric='mlogloss', enable_categorical=True)
-xgb_model.fit(X_train, y_train) 
+# Define parameter grid for XGBoost (optimized for faster search)
+param_grid = {
+    'n_estimators': [100, 200],
+    'max_depth': [5, 10],
+    'learning_rate': [0.01, 0.1],
+    'subsample': [0.7, 1.0],
+    'colsample_bytree': [0.7, 1.0],
+}
+
+# Create XGBoost classifier base model
+xgb_base = XGBClassifier(eval_metric='mlogloss', enable_categorical=True, random_state=42)
+
+# Perform GridSearchCV for hyperparameter optimization
+grid_search = GridSearchCV(
+    estimator=xgb_base,
+    param_grid=param_grid,
+    cv=5,
+    scoring='accuracy',
+    n_jobs=-1,
+    verbose=2
+)
+
+# Fit grid search on training data
+grid_search.fit(X_train, y_train)
+
+# Get best model
+xgb_model = grid_search.best_estimator_
+
+print(f"\nBest parameters found: {grid_search.best_params_}")
+print(f"Best cross-validation score: {grid_search.best_score_:.4f}") 
 
 # Evaluate model
 train_accuracy = xgb_model.score(X_train, y_train)
 valid_accuracy = xgb_model.score(X_valid, y_valid)
 test_accuracy = xgb_model.score(X_test, y_test)
-print(f"XGBoost Classifier - Train Accuracy: {train_accuracy}")
-print(f"XGBoost Classifier - Validation Accuracy: {valid_accuracy}")
-print(f"XGBoost Classifier - Test Accuracy: {test_accuracy}")
-# Save the trained model
+print(f"\nXGBoost Classifier - Train Accuracy: {train_accuracy:.4f}")
+print(f"XGBoost Classifier - Validation Accuracy: {valid_accuracy:.4f}")
+print(f"XGBoost Classifier - Test Accuracy: {test_accuracy:.4f}")
+
+# Save the trained model and grid search results
 joblib.dump(xgb_model, 'xgb_classifier_model.joblib')
+joblib.dump(grid_search, 'xgb_grid_search.joblib')
+print("\nModel and grid search results saved successfully!")
