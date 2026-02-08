@@ -21,7 +21,7 @@ gmpe = BooreEtAl2014()
 # 2. Load data from data2.csv
 # -----------------------
 script_dir = os.path.dirname(os.path.abspath(__file__))
-data_path = os.path.join(script_dir, 'Data', 'data2.csv')
+data_path = os.path.join(script_dir, 'data2.csv')
 
 print(f"Loading data from: {data_path}")
 df = pd.read_csv(

@@ -8,7 +8,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, LabelEncoder, OrdinalEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split, GridSearchCV
-from xgboost import XGBClassifier
+from catboost import CatBoostClassifier
 
 # Script path setup
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'Models'))
@@ -26,9 +26,6 @@ multi_class_cat_cols = [
     'ground_floor_type'
 ]
 
-#label encoding for multi-class categorical columns
-for col in multi_class_cat_cols:
-    df[col] = df[col].astype('category').cat.codes
 
 X_processed = df.drop("damage_grade", axis=1)
 
@@ -38,24 +35,29 @@ y=df["damage_grade"]
 X_train, X_test, y_train, y_test = train_test_split(X_processed, y, test_size=0.3, random_state=42)
 X_train, X_valid, y_train, y_valid = train_test_split(X_train, y_train, test_size=0.3, random_state=42)
 
-# Hyperparameter Optimization for XGBoost using GridSearchCV
-print("Starting hyperparameter optimization for XGBoost...")
+# Hyperparameter Optimization for CatBoost using GridSearchCV
+print("Starting hyperparameter optimization for CatBoost...")
 
-# Define parameter grid for XGBoost (optimized for faster search)
+# Define parameter grid for CatBoost (optimized for faster search)
 param_grid = {
-    'n_estimators': [100, 200],
-    'max_depth': [5, 10],
+    'iterations': [100, 200],
+    'depth': [4, 6],
     'learning_rate': [0.01, 0.1],
+    'l2_leaf_reg': [1, 5],
     'subsample': [0.7, 1.0],
-    'colsample_bytree': [0.7, 1.0],
 }
 
-# Create XGBoost classifier base model
-xgb_base = XGBClassifier(eval_metric='mlogloss', enable_categorical=True, random_state=42)
+# Create CatBoost classifier base model with cat_features as column names
+cat_base = CatBoostClassifier(
+    random_state=42,
+    verbose=0,
+    cat_features=multi_class_cat_cols,
+    bootstrap_type='Bernoulli'
+)
 
 # Perform GridSearchCV for hyperparameter optimization
 grid_search = GridSearchCV(
-    estimator=xgb_base,
+    estimator=cat_base,
     param_grid=param_grid,
     cv=5,
     scoring='accuracy',
@@ -67,20 +69,20 @@ grid_search = GridSearchCV(
 grid_search.fit(X_train, y_train)
 
 # Get best model
-xgb_model = grid_search.best_estimator_
+cat_model = grid_search.best_estimator_
 
 print(f"\nBest parameters found: {grid_search.best_params_}")
 print(f"Best cross-validation score: {grid_search.best_score_:.4f}") 
 
 # Evaluate model
-train_accuracy = xgb_model.score(X_train, y_train)
-valid_accuracy = xgb_model.score(X_valid, y_valid)
-test_accuracy = xgb_model.score(X_test, y_test)
-print(f"\nXGBoost Classifier - Train Accuracy: {train_accuracy:.4f}")
-print(f"XGBoost Classifier - Validation Accuracy: {valid_accuracy:.4f}")
-print(f"XGBoost Classifier - Test Accuracy: {test_accuracy:.4f}")
+train_accuracy = cat_model.score(X_train, y_train)
+valid_accuracy = cat_model.score(X_valid, y_valid)
+test_accuracy = cat_model.score(X_test, y_test)
+print(f"\nCatBoost Classifier - Train Accuracy: {train_accuracy:.4f}")
+print(f"CatBoost Classifier - Validation Accuracy: {valid_accuracy:.4f}")
+print(f"CatBoost Classifier - Test Accuracy: {test_accuracy:.4f}")
 
 # Save the trained model and grid search results
-joblib.dump(xgb_model, 'xgb_classifier_model.joblib')
-joblib.dump(grid_search, 'xgb_grid_search.joblib')
+joblib.dump(cat_model, 'cat_classifier_model.joblib')
+joblib.dump(grid_search, 'cat_grid_search.joblib')
 print("\nModel and grid search results saved successfully!")

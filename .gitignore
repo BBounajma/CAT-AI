@@ -17,6 +17,7 @@ lightning_logs/
 *.pth
 *.onnx
 *.joblib
+Models/saint_model/
 
 
 # Data artifacts
@@ -27,3 +28,6 @@ Data/*.csv
 
 # Environments
 .venv/
+
+#catboost artifacts
+catboost_info/
