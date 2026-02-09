@@ -82,6 +82,6 @@ print(f"Random Forest Classifier - Validation Accuracy: {valid_accuracy:.4f}")
 print(f"Random Forest Classifier - Test Accuracy: {test_accuracy:.4f}")
 
 # Save the trained model and grid search results
-joblib.dump(rf_model, 'rf_classifier_model.joblib')
-joblib.dump(grid_search, 'rf_grid_search.joblib')
+joblib.dump(rf_model, '../Models/rf_classifier_model.joblib')
+joblib.dump(grid_search, '../Models/rf_grid_search.joblib')
 print("\nModel and grid search results saved successfully!")

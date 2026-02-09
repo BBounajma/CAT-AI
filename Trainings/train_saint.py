@@ -135,10 +135,10 @@ if __name__ == '__main__':
     model_dir.mkdir(exist_ok=True)
 
     # 1) Save the preprocessor
-    joblib.dump(tab_preprocessor, model_dir / "tab_preprocessor.joblib")
+    joblib.dump(tab_preprocessor, model_dir / "../Models/Saint/tab_preprocessor.joblib")
 
     # 2) Save model state dict
-    torch.save(model.state_dict(), model_dir / "model_state_dict.pt")
+    torch.save(model.state_dict(), model_dir / "../Models/Saint/model_state_dict.pt")
 
     # 3) Save metadata/config as a dictionary
     model_config = {
@@ -160,7 +160,7 @@ if __name__ == '__main__':
         }
     }
 
-    joblib.dump(model_config, model_dir / "config.joblib")
+    joblib.dump(model_config, model_dir / "../Models/Saint/config.joblib")
 
     print(f"✓ Saved model artifacts to {model_dir}/")
     print(f"  - tab_preprocessor.joblib")

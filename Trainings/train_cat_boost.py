@@ -83,6 +83,6 @@ print(f"CatBoost Classifier - Validation Accuracy: {valid_accuracy:.4f}")
 print(f"CatBoost Classifier - Test Accuracy: {test_accuracy:.4f}")
 
 # Save the trained model and grid search results
-joblib.dump(cat_model, 'cat_classifier_model.joblib')
-joblib.dump(grid_search, 'cat_grid_search.joblib')
+joblib.dump(cat_model, '../Models/cat_classifier_model.joblib')
+joblib.dump(grid_search, '../Models/cat_grid_search.joblib')
 print("\nModel and grid search results saved successfully!")
