@@ -1,17 +1,19 @@
 import os
 import sys
 
-from anyio import Path
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import joblib
 from sklearn.model_selection import train_test_split
 
 import torch
+import torch.nn as nn
+from torchmetrics.classification import MulticlassF1Score,MulticlassFBetaScore
 from pytorch_widedeep import Trainer
 from pytorch_widedeep.preprocessing import TabPreprocessor
 from pytorch_widedeep.models import SAINT, WideDeep
-from pytorch_widedeep.metrics import Accuracy
+from pytorch_widedeep.metrics import Accuracy, F1Score
 
 
 if __name__ == '__main__':
@@ -87,10 +89,10 @@ if __name__ == '__main__':
     column_idx=tab_preprocessor.column_idx,
     cat_embed_input=tab_preprocessor.cat_embed_input,
     continuous_cols=num_cols,
-    input_dim=16,
-    n_heads=2,
-    n_blocks=1,
-    attn_dropout=0.0
+    input_dim=32,
+    n_heads=4,
+    n_blocks=2,
+    attn_dropout=0.1
 )
 
 
@@ -102,18 +104,68 @@ if __name__ == '__main__':
     # ------------------------------------------------------------------
     # Trainer
     # ------------------------------------------------------------------
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    model = model.to(device)
+    
+
+    """
     class_weights = torch.tensor(
         1.0 / np.bincount(y_train),
         dtype=torch.float32
     )
     class_weights /= class_weights.sum()
+    """
+    counts = np.bincount(y_train)
+    counts[counts == 0] = 1
+    beta = 0.999  # try 0.99–0.9999
+    effective_num = 1.0 - np.power(beta, counts)
+    class_weights = (1.0 - beta) / effective_num
+    class_weights = class_weights / class_weights.sum() * len(counts)
+    class_weights = torch.tensor(class_weights, dtype=torch.float32).to(device)
+
+
+    
+
+    class_weights = torch.tensor(
+        counts.sum() / counts,
+        dtype=torch.float32
+    )
+    class_weights = class_weights.to(device)
+
+    f1_macro = F1Score(
+    average="macro",
+    )
+
+    f1_per_class = MulticlassF1Score(
+    num_classes=5,
+    average=None   
+    ).to(device)
+
+    f2_macro = MulticlassFBetaScore(
+    num_classes=5,
+    beta=2.0,
+    average="macro"
+    ).to(device)
+
+    
+    weighted_ce = nn.CrossEntropyLoss(weight=class_weights)
 
     trainer = Trainer(
-        model=model,
-        objective="multiclass",
-        metrics=[Accuracy],
-        class_weights=class_weights
+    model=model,
+    objective="multiclass",          
+    custom_loss_function=weighted_ce,
+    metrics=[f1_macro, f1_per_class, f2_macro],
     )
+    
+
+    loss = trainer.loss_fn
+
+    print(type(loss))
+    print(hasattr(loss, "weight"))
+    print(loss.weight)
+
+
 
 
     # ------------------------------------------------------------------
@@ -124,8 +176,11 @@ if __name__ == '__main__':
         target=y_train,
         X_tab_val=X_valid_tab,
         target_val=y_valid,
-        n_epochs=10,
-        batch_size=256
+        n_epochs=100,
+        batch_size=512,
+        early_stopping=True,
+        early_stopping_metric="f1_macro",
+        patience=1,
     )
 
     # ------------------------------------------------------------------
@@ -134,13 +189,17 @@ if __name__ == '__main__':
 
     # Create a directory for all model artifacts
     model_dir = Path("Models/saint_model")
-    model_dir.mkdir(exist_ok=True)
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    # Ensure target artifacts directory exists
+    target_dir = Path("Models/Saint")
+    target_dir.mkdir(parents=True, exist_ok=True)
 
     # 1) Save the preprocessor
-    joblib.dump(tab_preprocessor, model_dir / "../Models/Saint/tab_preprocessor.joblib")
+    joblib.dump(tab_preprocessor, str(target_dir / "tab_preprocessor.joblib"))
 
     # 2) Save model state dict
-    torch.save(model.state_dict(), model_dir / "../Models/Saint/model_state_dict.pt")
+    torch.save(model.state_dict(), str(target_dir / "model_state_dict.pt"))
 
     # 3) Save metadata/config as a dictionary
     model_config = {
@@ -162,9 +221,9 @@ if __name__ == '__main__':
         }
     }
 
-    joblib.dump(model_config, model_dir / "../Models/Saint/config.joblib")
+    joblib.dump(model_config, str(target_dir / "config.joblib"))
 
-    print(f"✓ Saved model artifacts to {model_dir}/")
+    print(f"✓ Saved model artifacts to {target_dir}/")
     print(f"  - tab_preprocessor.joblib")
     print(f"  - model_state_dict.pt")
     print(f"  - config.joblib")
