@@ -34,6 +34,8 @@ if __name__ == '__main__':
     'ground_floor_type'
     ]
 
+    y=df["damage_grade"] 
+    
     X_processed = df.drop("damage_grade", axis=1)
 
     #scale numerical features to be scaled by TabPreprocessor
@@ -48,7 +50,7 @@ if __name__ == '__main__':
     
 
 
-    y=df["damage_grade"] 
+    
 
     # Split data into training, validation, and test sets
     X_train, X_test, y_train, y_test = train_test_split(X_processed, y, test_size=0.3, random_state=42)

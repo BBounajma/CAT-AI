@@ -26,13 +26,15 @@ multi_class_cat_cols = [
     'ground_floor_type'
 ]
 
+y=df["damage_grade"] 
+
 #label encoding for multi-class categorical columns
 for col in multi_class_cat_cols:
     df[col] = df[col].astype('category').cat.codes
 
 X_processed = df.drop("damage_grade", axis=1)
 
-y=df["damage_grade"] 
+
 
 # Split data into training, validation, and test sets
 X_train, X_test, y_train, y_test = train_test_split(X_processed, y, test_size=0.3, random_state=42)
@@ -82,6 +84,8 @@ print(f"Random Forest Classifier - Validation Accuracy: {valid_accuracy:.4f}")
 print(f"Random Forest Classifier - Test Accuracy: {test_accuracy:.4f}")
 
 # Save the trained model and grid search results
-joblib.dump(rf_model, '../Models/rf_classifier_model.joblib')
-joblib.dump(grid_search, '../Models/rf_grid_search.joblib')
+models_dir = os.path.join(os.path.dirname(__file__), '..', 'Models')
+os.makedirs(models_dir, exist_ok=True)
+joblib.dump(rf_model, os.path.join(models_dir, 'rf_classifier_model.joblib'))
+joblib.dump(grid_search, os.path.join(models_dir, 'rf_grid_search.joblib'))
 print("\nModel and grid search results saved successfully!")
