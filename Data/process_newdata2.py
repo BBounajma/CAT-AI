@@ -16,10 +16,7 @@ as tree based models do not require it.
 import os
 import sys
 import pandas as pd
-from sklearn.model_selection import train_test_split
 
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'Models'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'Data'))
 
 
