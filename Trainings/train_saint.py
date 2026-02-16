@@ -1,5 +1,6 @@
 import os
 import sys
+import einops
 
 from pathlib import Path
 import pandas as pd
@@ -12,8 +13,13 @@ import torch.nn as nn
 from torchmetrics.classification import MulticlassF1Score,MulticlassFBetaScore
 from pytorch_widedeep import Trainer
 from pytorch_widedeep.preprocessing import TabPreprocessor
-from pytorch_widedeep.models import SAINT, WideDeep
+from pytorch_widedeep.models import WideDeep
 from pytorch_widedeep.metrics import Accuracy, F1Score
+from pytorch_widedeep.models import SAINT
+from pytorch_widedeep.callbacks import EarlyStopping, ModelCheckpoint
+
+torch.manual_seed(42)
+np.random.seed(42)
 
 
 if __name__ == '__main__':
@@ -31,28 +37,23 @@ if __name__ == '__main__':
 
     #multi_class_cat_cols to be embedded by TabPreprocessor
     multi_class_cat_cols = [
-    'foundation_type',
-    'roof_type',
-    'ground_floor_type'
+        'foundation_type',
+        'roof_type',
+        'ground_floor_type'
     ]
 
-    y=df["damage_grade"] 
+    y = df["damage_grade"]
     
     X_processed = df.drop("damage_grade", axis=1)
 
     #scale numerical features to be scaled by TabPreprocessor
     num_cols = [
-    "PGA_g",
-    "count_floors_pre_eq",
-    "age_building",
-    "plinth_area_sq_ft",
-    "per-height_ft_pre_eq"
-
+        "PGA_g",
+        "count_floors_pre_eq",
+        "age_building",
+        "plinth_area_sq_ft",
+        "per-height_ft_pre_eq"
     ]
-    
-
-
-    
 
     # Split data into training, validation, and test sets
     X_train, X_test, y_train, y_test = train_test_split(X_processed, y, test_size=0.3, random_state=42)
@@ -65,6 +66,13 @@ if __name__ == '__main__':
     y_train = y_train.reset_index(drop=True)
     y_valid = y_valid.reset_index(drop=True)
     y_test = y_test.reset_index(drop=True)
+    
+    # Convert labels to integer type and ensure 0-indexed (damage_grade is 1-5, needs to be 0-4)
+    y_train = (y_train).astype(np.int64)
+    y_valid = (y_valid).astype(np.int64)
+    y_test = (y_test).astype(np.int64)
+
+
 
     # ------------------------------------------------------------------
     # Tabular preprocessing
@@ -86,14 +94,15 @@ if __name__ == '__main__':
     # SAINT + WideDeep model
     # ------------------------------------------------------------------
     saint = SAINT(
-    column_idx=tab_preprocessor.column_idx,
-    cat_embed_input=tab_preprocessor.cat_embed_input,
-    continuous_cols=num_cols,
-    input_dim=32,
-    n_heads=4,
-    n_blocks=2,
-    attn_dropout=0.1
-)
+        column_idx=tab_preprocessor.column_idx,
+        cat_embed_input=tab_preprocessor.cat_embed_input,
+        continuous_cols=num_cols,
+        input_dim=64,
+        n_heads=8,
+        n_blocks=3,
+        attn_dropout=0.1,
+        ff_dropout=0.1,
+    )
 
 
     model = WideDeep(
@@ -107,65 +116,61 @@ if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = model.to(device)
-    
 
-    """
-    class_weights = torch.tensor(
-        1.0 / np.bincount(y_train),
-        dtype=torch.float32
-    )
-    class_weights /= class_weights.sum()
-    """
     counts = np.bincount(y_train)
     counts[counts == 0] = 1
-    beta = 0.999  # try 0.99–0.9999
-    effective_num = 1.0 - np.power(beta, counts)
-    class_weights = (1.0 - beta) / effective_num
-    class_weights = class_weights / class_weights.sum() * len(counts)
-    class_weights = torch.tensor(class_weights, dtype=torch.float32).to(device)
-
-
     
-
+    # Calculate class weights using inverse frequency
     class_weights = torch.tensor(
         counts.sum() / counts,
         dtype=torch.float32
     )
+    # Normalize weights
+    
     class_weights = class_weights.to(device)
 
     f1_macro = F1Score(
-    average="macro",
+        average="macro",
     )
 
     f1_per_class = MulticlassF1Score(
-    num_classes=5,
-    average=None   
+        num_classes=5,
+        average=None
     ).to(device)
 
     f2_macro = MulticlassFBetaScore(
-    num_classes=5,
-    beta=2.0,
-    average="macro"
+        num_classes=5,
+        beta=2.0,
+        average="macro"
     ).to(device)
 
-    
     weighted_ce = nn.CrossEntropyLoss(weight=class_weights)
 
-    trainer = Trainer(
-    model=model,
-    objective="multiclass",          
-    custom_loss_function=weighted_ce,
-    metrics=[f1_macro, f1_per_class, f2_macro],
+    # Setup early stopping
+    early_stopping = EarlyStopping(
+        monitor='val_loss',           # Monitor validation loss
+        min_delta=0.001,              # Minimum improvement threshold
+        patience=3,                  # Wait 3 epochs before stopping
+        verbose=1,                    # Print when stopping
+        mode='auto',                  # Auto-detect from 'val_loss'
+        restore_best_weights=True     # Use best model, not last
     )
-    
 
-    loss = trainer.loss_fn
+    trainer = Trainer(
+        model=model,
+        objective="multiclass",
+        custom_loss_function=weighted_ce,
+        metrics=[f1_macro, f1_per_class, f2_macro],
+        learning_rate=3e-4
+    )
 
-    print(type(loss))
-    print(hasattr(loss, "weight"))
-    print(loss.weight)
-
-
+    model_checkpoint = ModelCheckpoint(
+        filepath='models/saint_best',
+        monitor='val_loss',
+        mode='auto',
+        save_best_only=True,
+        max_save=1
+    )
 
 
     # ------------------------------------------------------------------
@@ -176,11 +181,10 @@ if __name__ == '__main__':
         target=y_train,
         X_tab_val=X_valid_tab,
         target_val=y_valid,
-        n_epochs=100,
-        batch_size=512,
-        early_stopping=True,
-        early_stopping_metric="f1_macro",
-        patience=1,
+        n_epochs=20,
+        batch_size=128,
+        clip_grad_norm=1.0,
+        early_stopping=early_stopping
     )
 
     # ------------------------------------------------------------------
@@ -205,19 +209,19 @@ if __name__ == '__main__':
     model_config = {
         "model_type": "SAINT",
         "architecture": {
-        "input_dim": 16,
-        "n_heads": 2,
-        "n_blocks": 1,
-        "attn_dropout": 0.0,
-        "pred_dim": 5
-    },
-    "features": {
-        "num_cols": num_cols,
-        "cat_cols": multi_class_cat_cols
-    },
-    "files": {
-        "preprocessor": "tab_preprocessor.joblib",
-        "weights": "model_state_dict.pt"
+            "input_dim": 16,
+            "n_heads": 2,
+            "n_blocks": 1,
+            "attn_dropout": 0.0,
+            "pred_dim": 5
+        },
+        "features": {
+            "num_cols": num_cols,
+            "cat_cols": multi_class_cat_cols
+        },
+        "files": {
+            "preprocessor": "tab_preprocessor.joblib",
+            "weights": "model_state_dict.pt"
         }
     }
 
