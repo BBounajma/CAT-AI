@@ -345,59 +345,201 @@ class WeightedEnsembleLearner:
 
 # Example usage
 if __name__ == "__main__":
-    from sklearn.datasets import make_classification
+    import os
+    import joblib
+    import torch
+    import pandas as pd
     from sklearn.model_selection import train_test_split
-    from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-    from sklearn.svm import SVC
-    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import classification_report, f1_score
+    from pytorch_widedeep.preprocessing import TabPreprocessor
+    from pytorch_widedeep.models import SAINT
+    import sys
     
-    # Create synthetic dataset
-    X, y = make_classification(n_samples=1000, n_features=20, n_informative=15,
-                              n_redundant=5, n_classes=3, random_state=42)
+    # Setup paths
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
+    models_dir = os.path.join(project_root, 'Models')
+    data_path = os.path.join(project_root, 'Data/processed_new_data2.csv')
     
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, 
-                                                         random_state=42)
-    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, 
-                                                       random_state=42)
+    print("="*70)
+    print("Weighted Ensemble Learner: XGBoost + Random Forest + SAINT")
+    print("="*70)
     
-    # Create and train base classifiers
-    clf1 = RandomForestClassifier(n_estimators=100, random_state=42)
-    clf2 = GradientBoostingClassifier(n_estimators=100, random_state=42)
-    clf3 = LogisticRegression(max_iter=1000, random_state=42)
+    # Load data
+    print("\nLoading data...")
+    df = pd.read_csv(data_path)
+    y = df["damage_grade"]
+    X = df.drop(columns=["damage_grade"])
     
-    clf1.fit(X_train, y_train)
-    clf2.fit(X_train, y_train)
-    clf3.fit(X_train, y_train)
+    # Split data
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.3, stratify=y, random_state=42
+    )
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_train, y_train, test_size=0.2, stratify=y_train, random_state=42
+    )
     
-    # Print individual classifier scores
-    print("Individual Classifier Scores:")
-    print(f"Random Forest: {clf1.score(X_test, y_test):.4f}")
-    print(f"Gradient Boosting: {clf2.score(X_test, y_test):.4f}")
-    print(f"Logistic Regression: {clf3.score(X_test, y_test):.4f}")
-    print()
+    print(f"Train: {len(X_train)}, Val: {len(X_val)}, Test: {len(X_test)}")
     
-    # Create ensemble learner with different methods
+    # Load models
+    print("\nLoading trained models...")
+    
+    # 1. XGBoost
+    xgb_path = os.path.join(models_dir, 'xgb_classifier_model.joblib')
+    if os.path.exists(xgb_path):
+        xgb_model = joblib.load(xgb_path)
+        print(f"✓ XGBoost loaded from {xgb_path}")
+    else:
+        print(f"✗ XGBoost model not found at {xgb_path}")
+        print("  Run: python Trainings/train_XGboost.py")
+        xgb_model = None
+    
+    # 2. Random Forest
+    rf_path = os.path.join(models_dir, 'rf_classifier_model.joblib')
+    if os.path.exists(rf_path):
+        rf_model = joblib.load(rf_path)
+        print(f"✓ Random Forest loaded from {rf_path}")
+    else:
+        print(f"✗ Random Forest model not found at {rf_path}")
+        print("  Run: python Trainings/train_rf.py")
+        rf_model = None
+    
+    # 3. SAINT - requires custom wrapper
+    class SAINTClassifier(torch.nn.Module):
+        """Standard classification head for SAINT."""
+        def __init__(self, saint_model, n_classes=5):
+            super().__init__()
+            self.saint = saint_model
+            self.fc = torch.nn.Linear(saint_model.output_dim, n_classes)
+
+        def forward(self, x):
+            h = self.saint(x)
+            return self.fc(h)
+    
+    class SAINTWrapper:
+        """Wrapper to make SAINT compatible with sklearn interface."""
+        def __init__(self, model, preprocessor, device='cpu'):
+            self.model = model
+            self.preprocessor = preprocessor
+            self.device = device
+            self.n_classes = 5
+            
+        def predict_proba(self, X):
+            """Return class probabilities."""
+            self.model.eval()
+            X_processed = self.preprocessor.transform(X)
+            X_tensor = torch.tensor(X_processed, dtype=torch.float32).to(self.device)
+            
+            with torch.no_grad():
+                logits = self.model(X_tensor)
+                probs = torch.softmax(logits, dim=1).cpu().numpy()
+                
+            return probs
+        
+        def predict(self, X):
+            """Return class predictions."""
+            probs = self.predict_proba(X)
+            return np.argmax(probs, axis=1)
+    
+    # Try to load SAINT model
+    saint_model_path = os.path.join(models_dir, 'saint_model.pt')
+    saint_preprocessor_path = os.path.join(models_dir, 'saint_tab_preprocessor.joblib')
+    
+    saint_wrapper = None
+    if os.path.exists(saint_model_path) and os.path.exists(saint_preprocessor_path):
+        try:
+            # Load preprocessor
+            saint_preprocessor = joblib.load(saint_preprocessor_path)
+            
+            # Recreate SAINT architecture
+            cat_embed_cols = ["foundation_type", "roof_type", "ground_floor_type"]
+            continuous_cols = [c for c in X.columns if c not in cat_embed_cols]
+            
+            saint = SAINT(
+                column_idx=saint_preprocessor.column_idx,
+                cat_embed_input=saint_preprocessor.cat_embed_input,
+                continuous_cols=continuous_cols,
+                input_dim=32,
+                n_heads=4,
+                n_blocks=3,
+                attn_dropout=0.1,
+                ff_dropout=0.1,
+            )
+            
+            saint_model = SAINTClassifier(saint)
+            saint_model.load_state_dict(torch.load(saint_model_path, map_location=torch.device('cpu')))
+            saint_model.eval()
+            
+            saint_wrapper = SAINTWrapper(saint_model, saint_preprocessor)
+            print(f"✓ SAINT loaded from {saint_model_path}")
+        except Exception as e:
+            print(f"✗ Error loading SAINT: {e}")
+    else:
+        print(f"✗ SAINT model not found")
+        print(f"  Expected: {saint_model_path}")
+        print(f"  Run train_saint_v2.py and add model saving code")
+    
+    # Collect available models
+    classifiers = []
+    if xgb_model is not None:
+        classifiers.append(('XGBoost', xgb_model))
+    if rf_model is not None:
+        classifiers.append(('Random Forest', rf_model))
+    if saint_wrapper is not None:
+        classifiers.append(('SAINT', saint_wrapper))
+    
+    if len(classifiers) == 0:
+        print("\n✗ No models available. Please train models first.")
+        sys.exit(1)
+    
+    print(f"\nUsing {len(classifiers)} models for ensemble")
+    
+    # Evaluate individual models
+    print("\n" + "="*70)
+    print("Individual Model Performance on Test Set")
+    print("="*70)
+    for name, clf in classifiers:
+        y_pred = clf.predict(X_test)
+        acc = accuracy_score(y_test, y_pred)
+        f1_macro = f1_score(y_test, y_pred, average='macro')
+        f1_weighted = f1_score(y_test, y_pred, average='weighted')
+        print(f"{name:20s} | Acc: {acc:.4f} | F1-Macro: {f1_macro:.4f} | F1-Weighted: {f1_weighted:.4f}")
+    
+    # Train ensemble with different methods
+    print("\n" + "="*70)
+    print("Ensemble Performance")
+    print("="*70)
+    
     for method in ['uniform', 'grid_search', 'optimization']:
-        print(f"\n{'='*50}")
-        print(f"Method: {method}")
-        print(f"{'='*50}")
+        print(f"\n{'-'*70}")
+        print(f"Method: {method.upper()}")
+        print(f"{'-'*70}")
         
-        classifiers = [
-            ('Random Forest', clf1),
-            ('Gradient Boosting', clf2),
-            ('Logistic Regression', clf3)
-        ]
+        ensemble = WeightedEnsembleLearner(
+            classifiers, 
+            method=method, 
+            metric='f1',  # Optimize for F1 score
+            use_proba=True, 
+            random_state=42
+        )
         
-        ensemble = WeightedEnsembleLearner(classifiers, method=method, metric='accuracy',
-                                           use_proba=True, random_state=42)
-        
-        # Train ensemble
+        # Train ensemble on validation set
         ensemble.fit(X_train, y_train, X_val, y_val)
         
-        # Evaluate
-        train_score = ensemble.score(X_train, y_train)
-        test_score = ensemble.score(X_test, y_test)
+        # Evaluate on test set
+        y_pred_ensemble = ensemble.predict(X_test)
+        acc = accuracy_score(y_test, y_pred_ensemble)
+        f1_macro = f1_score(y_test, y_pred_ensemble, average='macro')
+        f1_weighted = f1_score(y_test, y_pred_ensemble, average='weighted')
         
-        print(f"Training Accuracy: {train_score:.4f}")
-        print(f"Test Accuracy: {test_score:.4f}")
-        print(f"Learned Weights: {ensemble.get_weights()}")
+        print(f"\nTest Accuracy:       {acc:.4f}")
+        print(f"Test F1-Macro:       {f1_macro:.4f}")
+        print(f"Test F1-Weighted:    {f1_weighted:.4f}")
+        print(f"\nLearned Weights:")
+        for model_name, weight in ensemble.get_weights().items():
+            print(f"  {model_name:20s}: {weight:.4f}")
+    
+    print("\n" + "="*70)
+    print("Done!")
+    print("="*70)
+
