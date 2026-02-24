@@ -64,18 +64,23 @@ data_y = np.array(data_org.iloc[:,21]).astype('int').reshape(-1,1)-1
 
 from sklearn.model_selection import train_test_split
 
+stratify_labels = data_y.reshape(-1)
+
 x_smp, _, y_smp, _ = train_test_split(data_x,data_y,
                                         test_size = 0.01,
-                                        random_state = 0)
+                                        random_state = 0,
+                                        stratify = stratify_labels)
 #np.save('x_smp.npy',x_smp)
 #np.save('y_smp',y_smp)
 
 x_train, x_test, y_train, y_test = train_test_split(x_smp,y_smp,
                                                     test_size = 0.3,
-                                                    random_state = 0)
+                                                    random_state = 0,
+                                                    stratify = y_smp.reshape(-1))
 x_valid, x_test, y_valid, y_test = train_test_split(x_test,y_test,
                                                     test_size = 0.5,
-                                                    random_state = 0)
+                                                    random_state = 0,
+                                                    stratify = y_test.reshape(-1))
 
 train_mean = np.mean((x_train),axis=0).reshape(-1)
 train_std = np.std((x_train),axis=0).reshape(-1)

@@ -47,10 +47,12 @@ class boosting_ensemble():
             
         if one_hot==True:
             y_smp = self._onehot_encode(y_smp)
+        stratify_labels = y_smp.argmax(1) if len(y_smp.shape) > 1 else y_smp.reshape(-1)
             
         x_train, x_valid, y_train, y_valid = train_test_split(x_smp, y_smp,
                                                             test_size = 0.3,
-                                                            random_state = 1) 
+                                                            random_state = 1,
+                                                            stratify = stratify_labels) 
         boosting_acc = []
         for i, model in enumerate(self.model_list):
             learning_rate = self.learning_rate[i]
