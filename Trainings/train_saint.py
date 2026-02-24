@@ -10,12 +10,14 @@ from sklearn.metrics import accuracy_score, classification_report
 
 import torch
 import torch.nn as nn
-from torchmetrics.classification import MulticlassF1Score, MulticlassFBetaScore
+from torch.optim import SGD, lr_scheduler, AdamW
+from torchmetrics.classification import MulticlassF1Score, MulticlassFBetaScore, AUROC
+
 from pytorch_widedeep import Trainer
 from pytorch_widedeep.preprocessing import TabPreprocessor
 from pytorch_widedeep.models import WideDeep, SAINT
 from pytorch_widedeep.callbacks import EarlyStopping, ModelCheckpoint
-
+from pytorch_widedeep.initializers import XavierNormal
 
 torch.manual_seed(42)
 np.random.seed(42)
@@ -105,9 +107,9 @@ if __name__ == '__main__':
         continuous_cols=all_continuous_cols,
         input_dim=64,
         n_heads=8,
-        n_blocks=4,
-        attn_dropout=0.1,
-        ff_dropout=0.1,
+        n_blocks=3,
+        attn_dropout=0.05,
+        ff_dropout=0.05,
     )
 
     model = WideDeep(
@@ -121,37 +123,52 @@ if __name__ == '__main__':
     counts = np.bincount(y_train)
     counts[counts == 0] = 1
 
-    class_weights = torch.tensor(
-        np.log1p(counts.sum() / counts),
-        dtype=torch.float32
-    ).to(device)
+    weights = 1.0 / counts
+    weights = weights / weights.sum() * len(counts)
+
+    class_weights = torch.tensor(weights, dtype=torch.float32).to(device)
 
     f1_macro = MulticlassF1Score(num_classes=5, average='macro').to(device)
     f1_per_class = MulticlassF1Score(num_classes=5, average=None).to(device)
     f2_macro = MulticlassFBetaScore(num_classes=5, beta=2.0, average='macro').to(device)
 
-    loss_fn = FocalLoss(gamma=2.0, weight=class_weights)
 
-    early_stopping = EarlyStopping(
-        monitor='val_loss',
-        min_delta=0.001,
-        patience=6,
-        verbose=1,
-        restore_best_weights=True
+
+    auroc = AUROC(num_classes=len(counts), task="multiclass").to(device)
+
+    loss_fn = nn.CrossEntropyLoss(
+        weight=class_weights,
+        label_smoothing=0.05
     )
+
+    #loss_fn = FocalLoss(gamma=2.0, weight=class_weights)
+
+    deep_opt = AdamW(
+        model.deeptabular.parameters(),
+        lr=1e-4,
+        weight_decay=1e-4
+    )
+
 
     trainer = Trainer(
         model=model,
-        objective='multiclass',
+        objective="multiclass",
         custom_loss_function=loss_fn,
-        metrics=[f1_macro, f1_per_class, f2_macro],
-        learning_rate=2e-3,
-        lr_scheduler=torch.optim.lr_scheduler.ReduceLROnPlateau,
-        lr_scheduler_params={
-            'mode': 'min',
-            'factor': 0.5,
-            'patience': 3
+        metrics=[f1_macro],
+        optimizers={"deeptabular": deep_opt},
+        initializers={"deeptabular": XavierNormal},
+        lr_scheduler_params={          
+            "mode": "min",
+            "factor": 0.5,
+            "patience": 3
         }
+    )
+
+    early_stopping=EarlyStopping(
+        monitor='val_f1_macro',
+        mode="max",
+        patience=5,
+        restore_best_weights=True
     )
 
     model_checkpoint = ModelCheckpoint(
@@ -161,13 +178,16 @@ if __name__ == '__main__':
         max_save=1
     )
 
+    print("Train distribution:", np.bincount(y_train))
+    print("Valid distribution:", np.bincount(y_valid))
+
     trainer.fit(
         X_tab=X_train_tab,
         target=y_train,
         X_tab_val=X_valid_tab,
         target_val=y_valid,
-        n_epochs=50,
-        batch_size=1024,
+        n_epochs=20,
+        batch_size=256,
         clip_grad_norm=1.0,
         callbacks=[early_stopping, model_checkpoint]
     )
@@ -181,11 +201,11 @@ if __name__ == '__main__':
     model_config = {
         'model_type': 'SAINT',
         'architecture': {
-            'input_dim': 64,
-            'n_heads': 8,
-            'n_blocks': 4,
-            'attn_dropout': 0.1,
-            'ff_dropout': 0.1,
+            'input_dim': 32,
+            'n_heads': 4,
+            'n_blocks':24,
+            'attn_dropout': 0.05,
+            'ff_dropout': 0.05,
             'pred_dim': 5
         },
         'features': {

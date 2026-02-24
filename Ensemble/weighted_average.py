@@ -4,6 +4,7 @@ A class that learns optimal weights for a list of classifiers to improve overall
 Supports multiple weight optimization strategies.
 """
 
+import re
 import numpy as np
 from scipy.optimize import minimize, differential_evolution
 from sklearn.model_selection import cross_val_predict, cross_validate
@@ -70,9 +71,15 @@ class WeightedEnsembleLearner:
         predictions = []
         for name, clf in self.classifiers:
             if method == 'predict_proba':
-                pred = clf.predict_proba(X)
+                if hasattr(clf, 'predict_proba'):
+                    pred = clf.predict_proba(X)
+                else:
+                    pred = clf['predict_proba'](X)
             else:
-                pred = clf.predict(X)
+                if hasattr(clf, 'predict'):
+                    pred = clf.predict(X)
+                else:
+                    pred = clf['predict'](X)
             predictions.append(pred)
         return predictions
     
@@ -351,8 +358,7 @@ if __name__ == "__main__":
     import pandas as pd
     from sklearn.model_selection import train_test_split
     from sklearn.metrics import classification_report, f1_score
-    from pytorch_widedeep.preprocessing import TabPreprocessor
-    from pytorch_widedeep.models import SAINT
+    from pytorch_widedeep.models import SAINT, WideDeep
     import sys
     
     # Setup paths
@@ -404,80 +410,74 @@ if __name__ == "__main__":
         print("  Run: python Trainings/train_rf.py")
         rf_model = None
     
-    # 3. SAINT - requires custom wrapper
-    class SAINTClassifier(torch.nn.Module):
-        """Standard classification head for SAINT."""
-        def __init__(self, saint_model, n_classes=5):
-            super().__init__()
-            self.saint = saint_model
-            self.fc = torch.nn.Linear(saint_model.output_dim, n_classes)
+    def make_torch_tabular_predictor(model, preprocessor, device='cpu', batch_size=256):
+        """Return minimal predict/predict_proba callables."""
+        model = model.to(device)
+        model.eval()
 
-        def forward(self, x):
-            h = self.saint(x)
-            return self.fc(h)
-    
-    class SAINTWrapper:
-        """Wrapper to make SAINT compatible with sklearn interface."""
-        def __init__(self, model, preprocessor, device='cpu'):
-            self.model = model
-            self.preprocessor = preprocessor
-            self.device = device
-            self.n_classes = 5
-            
-        def predict_proba(self, X):
-            """Return class probabilities."""
-            self.model.eval()
-            X_processed = self.preprocessor.transform(X)
-            X_tensor = torch.tensor(X_processed, dtype=torch.float32).to(self.device)
-            
+        def predict_proba(X):
+            X_processed = preprocessor.transform(X)
+            X_tensor = torch.tensor(X_processed, dtype=torch.float32)
+
+            prob_chunks = []
             with torch.no_grad():
-                logits = self.model(X_tensor)
-                probs = torch.softmax(logits, dim=1).cpu().numpy()
-                
-            return probs
-        
-        def predict(self, X):
-            """Return class predictions."""
-            probs = self.predict_proba(X)
-            return np.argmax(probs, axis=1)
+                for start in range(0, X_tensor.shape[0], batch_size):
+                    end = start + batch_size
+                    batch = X_tensor[start:end].to(device)
+                    try:
+                        logits = model({"deeptabular": batch})
+                    except KeyError:
+                        logits = model({"X_tab": batch})
+                    probs = torch.softmax(logits, dim=1).cpu().numpy()
+                    prob_chunks.append(probs)
+
+            return np.vstack(prob_chunks)
+
+        def predict(X):
+            return np.argmax(predict_proba(X), axis=1)
+
+        return {'predict_proba': predict_proba, 'predict': predict}
     
     # Try to load SAINT model
-    saint_model_path = os.path.join(models_dir, 'saint_model.pt')
-    saint_preprocessor_path = os.path.join(models_dir, 'saint_tab_preprocessor.joblib')
+    saint_dir = os.path.join(models_dir, 'Saint')
+    saint_model_path = os.path.join(saint_dir, 'model_state_dict.pt')
+    saint_preprocessor_path = os.path.join(saint_dir, 'tab_preprocessor.joblib')
+    saint_config_path = os.path.join(saint_dir, 'config.joblib')
     
-    saint_wrapper = None
+    saint_predictor = None
     if os.path.exists(saint_model_path) and os.path.exists(saint_preprocessor_path):
         try:
             # Load preprocessor
             saint_preprocessor = joblib.load(saint_preprocessor_path)
-            
-            # Recreate SAINT architecture
-            cat_embed_cols = ["foundation_type", "roof_type", "ground_floor_type"]
-            continuous_cols = [c for c in X.columns if c not in cat_embed_cols]
-            
+            saint_config = joblib.load(saint_config_path) if os.path.exists(saint_config_path) else {}
+            features = saint_config.get('features', {})
+            continuous_cols = features.get('all_continuous_cols', getattr(saint_preprocessor, 'continuous_cols', []))
+
+            # Must match Trainings/train_saint.py exactly
             saint = SAINT(
                 column_idx=saint_preprocessor.column_idx,
                 cat_embed_input=saint_preprocessor.cat_embed_input,
                 continuous_cols=continuous_cols,
-                input_dim=32,
-                n_heads=4,
+                input_dim=64,
+                n_heads=8,
                 n_blocks=3,
-                attn_dropout=0.1,
-                ff_dropout=0.1,
+                attn_dropout=0.05,
+                ff_dropout=0.05,
             )
-            
-            saint_model = SAINTClassifier(saint)
-            saint_model.load_state_dict(torch.load(saint_model_path, map_location=torch.device('cpu')))
+            saint_model = WideDeep(deeptabular=saint, pred_dim=5)
+
+            state_dict = torch.load(saint_model_path, map_location=torch.device('cpu'))
+            saint_model.load_state_dict(state_dict, strict=True)
             saint_model.eval()
             
-            saint_wrapper = SAINTWrapper(saint_model, saint_preprocessor)
+            saint_predictor = make_torch_tabular_predictor(saint_model, saint_preprocessor)
             print(f"✓ SAINT loaded from {saint_model_path}")
         except Exception as e:
             print(f"✗ Error loading SAINT: {e}")
     else:
         print(f"✗ SAINT model not found")
-        print(f"  Expected: {saint_model_path}")
-        print(f"  Run train_saint_v2.py and add model saving code")
+        print(f"  Expected files: {saint_model_path} and {saint_preprocessor_path}")
+        print(f"  Run: python3 Trainings/train_saint.py")
     
     # Collect available models
     classifiers = []
@@ -485,8 +485,8 @@ if __name__ == "__main__":
         classifiers.append(('XGBoost', xgb_model))
     if rf_model is not None:
         classifiers.append(('Random Forest', rf_model))
-    if saint_wrapper is not None:
-        classifiers.append(('SAINT', saint_wrapper))
+    if saint_predictor is not None:
+        classifiers.append(('SAINT', saint_predictor))
     
     if len(classifiers) == 0:
         print("\n✗ No models available. Please train models first.")
@@ -499,7 +499,10 @@ if __name__ == "__main__":
     print("Individual Model Performance on Test Set")
     print("="*70)
     for name, clf in classifiers:
-        y_pred = clf.predict(X_test)
+        if hasattr(clf, 'predict'):
+            y_pred = clf.predict(X_test)
+        else:
+            y_pred = clf['predict'](X_test)
         acc = accuracy_score(y_test, y_pred)
         f1_macro = f1_score(y_test, y_pred, average='macro')
         f1_weighted = f1_score(y_test, y_pred, average='weighted')
