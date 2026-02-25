@@ -56,7 +56,6 @@ param_grid = {
 cat_base = CatBoostClassifier(
     random_state=42,
     verbose=0,
-    cat_features=multi_class_cat_cols,
     bootstrap_type='Bernoulli'
 )
 
@@ -71,7 +70,7 @@ grid_search = GridSearchCV(
 )
 
 # Fit grid search on training data
-grid_search.fit(X_train, y_train)
+grid_search.fit(X_train, y_train, cat_features=multi_class_cat_cols)
 
 # Get best model
 cat_model = grid_search.best_estimator_
@@ -88,7 +87,7 @@ print(f"CatBoost Classifier - Validation Accuracy: {valid_accuracy:.4f}")
 print(f"CatBoost Classifier - Test Accuracy: {test_accuracy:.4f}")
 
 # Save the trained model and grid search results
-models_dir = os.path.join(os.path.dirname(__file__), '..', 'Models')
+models_dir = os.path.join(os.path.dirname(__file__), '..', 'Models','CatBoost')
 os.makedirs(models_dir, exist_ok=True)
 joblib.dump(cat_model, os.path.join(models_dir, 'cat_classifier_model.joblib'))
 joblib.dump(grid_search, os.path.join(models_dir, 'cat_grid_search.joblib'))

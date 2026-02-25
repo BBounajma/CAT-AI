@@ -148,7 +148,7 @@ if __name__ == '__main__':
 
     early_stopping = EarlyStopping(
         monitor='val_loss',
-        min_delta=0.001,
+        min_delta=0.01,
         patience=6,
         verbose=1,
         restore_best_weights=True

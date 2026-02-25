@@ -87,7 +87,7 @@ print(f"XGBoost Classifier - Validation Accuracy: {valid_accuracy:.4f}")
 print(f"XGBoost Classifier - Test Accuracy: {test_accuracy:.4f}")
 
 # Save the trained model and grid search results
-models_dir =os.path.join(os.path.dirname(__file__), '..', 'Models')
+models_dir =os.path.join(os.path.dirname(__file__), '..', 'Models', 'XG_boost')
 os.makedirs(models_dir, exist_ok=True)
 joblib.dump(xgb_model, os.path.join(models_dir, 'xgb_classifier_model.joblib'))
 joblib.dump(grid_search, os.path.join(models_dir, 'xgb_grid_search.joblib'))

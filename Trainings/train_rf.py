@@ -88,7 +88,7 @@ print(f"Random Forest Classifier - Validation Accuracy: {valid_accuracy:.4f}")
 print(f"Random Forest Classifier - Test Accuracy: {test_accuracy:.4f}")
 
 # Save the trained model and grid search results
-models_dir = os.path.join(os.path.dirname(__file__), '..', 'Models')
+models_dir = os.path.join(os.path.dirname(__file__), '..', 'Models','Random_Forest')
 os.makedirs(models_dir, exist_ok=True)
 joblib.dump(rf_model, os.path.join(models_dir, 'rf_classifier_model.joblib'))
 joblib.dump(grid_search, os.path.join(models_dir, 'rf_grid_search.joblib'))

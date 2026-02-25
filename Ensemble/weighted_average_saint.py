@@ -78,7 +78,7 @@ def main():
 
 	print("\nLoading trained models...")
 
-	xgb_path = os.path.join(models_dir, 'xgb_classifier_model.joblib')
+	xgb_path = os.path.join(models_dir, 'XG_boost/xgb_classifier_model.joblib')
 	if os.path.exists(xgb_path):
 		xgb_model = joblib.load(xgb_path)
 		print(f"✓ XGBoost loaded from {xgb_path}")
@@ -87,7 +87,7 @@ def main():
 		print("  Run: python Trainings/train_XGboost.py")
 		xgb_model = None
 
-	rf_path = os.path.join(models_dir, 'rf_classifier_model.joblib')
+	rf_path = os.path.join(models_dir, 'Random_Forest/rf_classifier_model.joblib')
 	if os.path.exists(rf_path):
 		rf_model = joblib.load(rf_path)
 		print(f"✓ Random Forest loaded from {rf_path}")
