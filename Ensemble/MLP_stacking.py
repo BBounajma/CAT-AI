@@ -7,7 +7,9 @@ import numpy as np
 import pandas as pd
 import torch
 from sklearn.metrics import accuracy_score, f1_score
+from sklearn.base import clone
 from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold
 from sklearn.neural_network import MLPClassifier
 
 from pytorch_widedeep.models import SAINT, WideDeep
@@ -31,6 +33,15 @@ def make_torch_tabular_predictor(model, preprocessor, device="cpu", batch_size=1
 	model = model.to(device)
 	model.eval()
 
+	def _extract_logits(output):
+		if isinstance(output, (tuple, list)):
+			return output[0]
+		if isinstance(output, dict):
+			for key in ("logits", "preds", "y_pred"):
+				if key in output:
+					return output[key]
+		return output
+
 	def predict_proba(X):
 		X_processed = preprocessor.transform(X)
 		X_tensor = torch.tensor(X_processed, dtype=torch.float32)
@@ -41,9 +52,10 @@ def make_torch_tabular_predictor(model, preprocessor, device="cpu", batch_size=1
 				end = start + batch_size
 				batch = X_tensor[start:end].to(device)
 				try:
-					logits = model({"deeptabular": batch})
+					model_output = model({"deeptabular": batch})
 				except KeyError:
-					logits = model({"X_tab": batch})
+					model_output = model({"X_tab": batch})
+				logits = _extract_logits(model_output)
 				probs = torch.softmax(logits, dim=1).cpu().numpy()
 				prob_chunks.append(probs)
 
@@ -98,7 +110,82 @@ def load_saint_predictor(models_dir):
 
 def build_meta_features(classifiers, X):
 	proba_blocks = [model_predict_proba(clf, X) for _, clf in classifiers]
-	return np.concatenate(proba_blocks, axis=1)
+	return _build_enhanced_meta_features(proba_blocks)
+
+
+def _build_enhanced_meta_features(proba_blocks, eps=1e-12):
+	"""
+	Build richer meta-features from base-model class probabilities.
+
+	Feature groups:
+	1) Raw probability blocks for each model (backward-compatible prefix)
+	2) Per-model confidence stats: max prob, margin(top1-top2), entropy
+	3) Cross-model average probabilities and uncertainty stats
+	"""
+	if len(proba_blocks) == 0:
+		raise ValueError("proba_blocks cannot be empty")
+
+	base = np.concatenate(proba_blocks, axis=1)
+	aux_blocks = []
+
+	for probs in proba_blocks:
+		sorted_probs = np.sort(probs, axis=1)
+		top1 = sorted_probs[:, -1]
+		top2 = sorted_probs[:, -2] if probs.shape[1] > 1 else np.zeros_like(top1)
+		margin = top1 - top2
+		entropy = -np.sum(np.clip(probs, eps, 1.0) * np.log(np.clip(probs, eps, 1.0)), axis=1)
+		aux_blocks.append(np.column_stack([top1, margin, entropy]))
+
+	mean_probs = np.mean(np.stack(proba_blocks, axis=0), axis=0)
+	sorted_mean = np.sort(mean_probs, axis=1)
+	mean_top1 = sorted_mean[:, -1]
+	mean_top2 = sorted_mean[:, -2] if mean_probs.shape[1] > 1 else np.zeros_like(mean_top1)
+	mean_margin = mean_top1 - mean_top2
+	mean_entropy = -np.sum(
+		np.clip(mean_probs, eps, 1.0) * np.log(np.clip(mean_probs, eps, 1.0)), axis=1
+	)
+
+	aux = np.concatenate(aux_blocks + [mean_probs, np.column_stack([mean_top1, mean_margin, mean_entropy])], axis=1)
+	return np.concatenate([base, aux], axis=1)
+
+
+def build_meta_features_oof(classifiers, X, y, n_splits=5, random_state=42):
+	"""
+	Build OOF meta-features when base estimators are trainable.
+
+	For sklearn-like models (fit + predict_proba), generates proper OOF probabilities.
+	For pre-fitted predictors (dict wrappers, e.g. torch models), falls back to direct
+	predict_proba on X and keeps the original predictor for test-time meta-features.
+	"""
+	skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+	meta_blocks = []
+	fitted_classifiers = []
+
+	for name, clf in classifiers:
+		if hasattr(clf, "fit") and hasattr(clf, "predict_proba"):
+			n_classes = model_predict_proba(clf, X.iloc[:1]).shape[1]
+			oof = np.zeros((len(X), n_classes), dtype=np.float64)
+
+			for train_idx, val_idx in skf.split(X, y):
+				X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
+				y_tr = y.iloc[train_idx]
+
+				model_fold = clone(clf)
+				model_fold.fit(X_tr, y_tr)
+				oof[val_idx] = model_fold.predict_proba(X_val)
+
+			model_full = clone(clf)
+			model_full.fit(X, y)
+			fitted_classifiers.append((name, model_full))
+			meta_blocks.append(oof)
+		else:
+			print(f"[OOF fallback] {name}: using direct predictions (model is not fit-capable).")
+			meta_blocks.append(model_predict_proba(clf, X))
+			fitted_classifiers.append((name, clf))
+
+	X_meta = np.concatenate(meta_blocks, axis=1)
+	X_meta = _build_enhanced_meta_features(meta_blocks)
+	return X_meta, fitted_classifiers
 
 
 def summarize_model_usage(mlp_meta, classifiers, n_classes):
@@ -122,7 +209,7 @@ def ablation_impact(mlp_meta, classifiers, X, y):
 	proba_blocks = [model_predict_proba(clf, X) for _, clf in classifiers]
 	n_classes = proba_blocks[0].shape[1]
 
-	X_meta_full = np.concatenate(proba_blocks, axis=1)
+	X_meta_full = _build_enhanced_meta_features(proba_blocks)
 	y_pred_full = mlp_meta.predict(X_meta_full)
 	base_acc = accuracy_score(y, y_pred_full)
 	base_f1 = f1_score(y, y_pred_full, average="macro")
@@ -132,7 +219,7 @@ def ablation_impact(mlp_meta, classifiers, X, y):
 	for idx, (name, _) in enumerate(classifiers):
 		ablated_blocks = [block.copy() for block in proba_blocks]
 		ablated_blocks[idx] = uniform
-		X_meta_ablate = np.concatenate(ablated_blocks, axis=1)
+		X_meta_ablate = _build_enhanced_meta_features(ablated_blocks)
 		y_pred_ablate = mlp_meta.predict(X_meta_ablate)
 		acc = accuracy_score(y, y_pred_ablate)
 		f1m = f1_score(y, y_pred_ablate, average="macro")

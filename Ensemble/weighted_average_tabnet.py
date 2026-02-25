@@ -6,7 +6,7 @@ import pandas as pd
 import torch
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score
-from pytorch_widedeep.models import SAINT, WideDeep
+from pytorch_widedeep.models import TabNet, WideDeep
 
 try:
 	from Ensemble.weighted_average import WeightedEnsembleLearner, StackingMetaEnsemble
@@ -14,10 +14,18 @@ except ModuleNotFoundError:
 	from weighted_average import WeightedEnsembleLearner, StackingMetaEnsemble
 
 
-def make_torch_tabular_predictor(model, preprocessor, device='cpu', batch_size=256):
-	"""Return minimal predict/predict_proba callables."""
+def make_torch_tabular_predictor(model, preprocessor, device="cpu", batch_size=128):
 	model = model.to(device)
 	model.eval()
+
+	def _extract_logits(output):
+		if isinstance(output, (tuple, list)):
+			return output[0]
+		if isinstance(output, dict):
+			for key in ("logits", "preds", "y_pred"):
+				if key in output:
+					return output[key]
+		return output
 
 	def predict_proba(X):
 		X_processed = preprocessor.transform(X)
@@ -29,9 +37,10 @@ def make_torch_tabular_predictor(model, preprocessor, device='cpu', batch_size=2
 				end = start + batch_size
 				batch = X_tensor[start:end].to(device)
 				try:
-					logits = model({"deeptabular": batch})
+					model_output = model({"deeptabular": batch})
 				except KeyError:
-					logits = model({"X_tab": batch})
+					model_output = model({"X_tab": batch})
+				logits = _extract_logits(model_output)
 				probs = torch.softmax(logits, dim=1).cpu().numpy()
 				prob_chunks.append(probs)
 
@@ -40,7 +49,61 @@ def make_torch_tabular_predictor(model, preprocessor, device='cpu', batch_size=2
 	def predict(X):
 		return np.argmax(predict_proba(X), axis=1)
 
-	return {'predict_proba': predict_proba, 'predict': predict}
+	return {"predict_proba": predict_proba, "predict": predict}
+
+
+def load_tabnet_predictor(models_dir):
+	tabnet_dir = os.path.join(models_dir, "TabNet")
+	tabnet_model_path = os.path.join(tabnet_dir, "model_state_dict.pt")
+	tabnet_preprocessor_path = os.path.join(tabnet_dir, "tab_preprocessor.joblib")
+
+	if not (os.path.exists(tabnet_model_path) and os.path.exists(tabnet_preprocessor_path)):
+		print("✗ TabNet model not found")
+		print(f"  Expected files: {tabnet_model_path} and {tabnet_preprocessor_path}")
+		print("  Run: python3 Trainings/train_tabnet.py")
+		return None
+
+	try:
+		tab_preprocessor = joblib.load(tabnet_preprocessor_path)
+		continuous_cols = getattr(
+			tab_preprocessor,
+			"continuous_cols",
+			[
+				"PGA_g",
+				"count_floors_pre_eq",
+				"age_building",
+				"plinth_area_sq_ft",
+				"per-height_ft_pre_eq",
+			],
+		)
+
+		tabnet = TabNet(
+			column_idx=tab_preprocessor.column_idx,
+			cat_embed_input=tab_preprocessor.cat_embed_input,
+			continuous_cols=continuous_cols,
+			n_steps=7,
+			step_dim=128,
+			attn_dim=128,
+			dropout=0.2,
+			n_glu_step_dependent=2,
+			n_glu_shared=2,
+			gamma=1.3,
+			epsilon=1e-15,
+			ghost_bn=True,
+			virtual_batch_size=128,
+			momentum=0.02,
+			mask_type="sparsemax",
+		)
+		tabnet_model = WideDeep(deeptabular=tabnet, pred_dim=5)
+		state_dict = torch.load(tabnet_model_path, map_location=torch.device("cpu"))
+		tabnet_model.load_state_dict(state_dict, strict=True)
+		tabnet_model.eval()
+
+		print(f"✓ TabNet loaded from {tabnet_model_path}")
+		return make_torch_tabular_predictor(tabnet_model, tab_preprocessor)
+	except Exception as exc:
+		print(f"✗ Error loading TabNet: {exc}")
+		return None
 
 
 def main():
@@ -50,7 +113,7 @@ def main():
 	data_path = os.path.join(project_root, 'Data/processed_new_data2.csv')
 
 	print("=" * 70)
-	print("Weighted Ensemble Learner: XGBoost + Random Forest + SAINT")
+	print("Weighted Ensemble Learner: XGBoost + Random Forest + TabNet")
 	print("=" * 70)
 
 	print("\nLoading data...")
@@ -96,56 +159,15 @@ def main():
 		print("  Run: python Trainings/train_rf.py")
 		rf_model = None
 
-	saint_dir = os.path.join(models_dir, 'Saint')
-	saint_model_path = os.path.join(saint_dir, 'model_state_dict.pt')
-	saint_preprocessor_path = os.path.join(saint_dir, 'tab_preprocessor.joblib')
-	saint_config_path = os.path.join(saint_dir, 'config.joblib')
-
-	saint_predictor = None
-	if os.path.exists(saint_model_path) and os.path.exists(saint_preprocessor_path):
-		try:
-			saint_preprocessor = joblib.load(saint_preprocessor_path)
-			saint_config = (
-				joblib.load(saint_config_path) if os.path.exists(saint_config_path) else {}
-			)
-			features = saint_config.get('features', {})
-			continuous_cols = features.get(
-				'all_continuous_cols',
-				getattr(saint_preprocessor, 'continuous_cols', []),
-			)
-
-			saint = SAINT(
-				column_idx=saint_preprocessor.column_idx,
-				cat_embed_input=saint_preprocessor.cat_embed_input,
-				continuous_cols=continuous_cols,
-				input_dim=64,
-				n_heads=8,
-				n_blocks=3,
-				attn_dropout=0.05,
-				ff_dropout=0.05,
-			)
-			saint_model = WideDeep(deeptabular=saint, pred_dim=5)
-
-			state_dict = torch.load(saint_model_path, map_location=torch.device('cpu'))
-			saint_model.load_state_dict(state_dict, strict=True)
-			saint_model.eval()
-
-			saint_predictor = make_torch_tabular_predictor(saint_model, saint_preprocessor)
-			print(f"✓ SAINT loaded from {saint_model_path}")
-		except Exception as e:
-			print(f"✗ Error loading SAINT: {e}")
-	else:
-		print("✗ SAINT model not found")
-		print(f"  Expected files: {saint_model_path} and {saint_preprocessor_path}")
-		print("  Run: python3 Trainings/train_saint.py")
+	tabnet_predictor = load_tabnet_predictor(models_dir)
 
 	classifiers = []
 	if xgb_model is not None:
 		classifiers.append(('XGBoost', xgb_model))
 	if rf_model is not None:
 		classifiers.append(('Random Forest', rf_model))
-	if saint_predictor is not None:
-		classifiers.append(('SAINT', saint_predictor))
+	if tabnet_predictor is not None:
+		classifiers.append(('TabNet', tabnet_predictor))
 
 	if len(classifiers) == 0:
 		print("\n✗ No models available. Please train models first.")
