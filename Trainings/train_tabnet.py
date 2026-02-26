@@ -180,9 +180,9 @@ if __name__ == '__main__':
     # ------------------------------------------------------------------
     trainer.fit(
         X_tab=X_train_tab,
-        target=y_train,
+        target=y_train.values,
         X_tab_val=X_valid_tab,
-        target_val=y_valid,
+        target_val=y_valid.values,
         n_epochs=50,
         batch_size=1024,
         clip_grad_norm=1.0,

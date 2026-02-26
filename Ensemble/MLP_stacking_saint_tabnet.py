@@ -188,10 +188,10 @@ def main():
 	X_meta_test = build_meta_features(stacked_classifiers, X_test)
 
 	mlp_meta = MLPClassifier(
-		hidden_layer_sizes=(64, 32),
-		activation="relu",
+		hidden_layer_sizes=(48, 24),
+		activation="tanh",
 		solver="adam",
-		alpha=1e-4,
+		alpha=5e-4,
 		batch_size=64,
 		learning_rate_init=1e-3,
 		max_iter=300,
