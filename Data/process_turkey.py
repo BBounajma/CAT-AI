@@ -44,16 +44,26 @@ df["Floor Area"] = df["Floor Area"] * 10.7639
 # Compute the height per floor
 df["per-height_ft_pre_eq"] = df["Total Height"] / df["No Stories"]
 
-# Enconde the target variable to match Nepal data
+# Encode the target variable to match Nepal data
 damage_grade_mapping = {
     "N": 0,
-    "Se": 1,
+    "L": 1,
     "M": 2,
-    "E": 3,
+    "S": 3,
     "C": 4
 }
 
 df["Structural Damage (5-class)"] = df["Structural Damage (5-class)"].map(damage_grade_mapping)
+
+# Count and report rows with NaN target after mapping
+nan_targets = int(df["Structural Damage (5-class)"].isna().sum())
+print(f"Rows with NaN (unmapped or missing) target before drop: {nan_targets} out of {len(df)} total rows")
+
+# Remove rows where the target could not be mapped (avoid NaN targets)
+before = len(df)
+df = df[df["Structural Damage (5-class)"].notna()].reset_index(drop=True)
+after = len(df)
+print(f"Dropped {before - after} rows with unmapped or missing target values out of {before} total rows")
 
 # Rename columns to match Nepal data
 df.rename(columns={
@@ -139,5 +149,18 @@ df_processed[num_cols] = df_processed[num_cols].fillna(df_processed[num_cols].me
 X_processed = df_processed
 
 # Save the processed data to a new CSV file
+# Try to align column order with processed_new_data2.csv when available
+try:
+    ref = pd.read_csv("Data/processed_new_data2.csv", nrows=0)
+    ref_cols = [c for c in list(ref.columns) if c != "damage_grade"]
+    # keep only columns present in our processed frame, preserving reference order
+    cols_present = [c for c in ref_cols if c in X_processed.columns]
+    # append any remaining columns that are in X_processed but not in reference
+    remaining = [c for c in X_processed.columns if c not in cols_present]
+    X_processed = X_processed[cols_present + remaining]
+except Exception:
+    # if reference not available or any error, keep current ordering
+    pass
+
 processed_data = pd.concat([X_processed, y], axis=1)
 processed_data.to_csv("Data/processed_Turkey_data.csv", index=False)
