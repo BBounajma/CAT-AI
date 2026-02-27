@@ -172,61 +172,7 @@ def main():
             f"LogLoss: {ll}"
         )
 
-    # --------------------------------------------------------
-    # MLP Stacking Evaluation (SAFE VERSION)
-    # --------------------------------------------------------
-    if "mlp_stack" in models:
-        print("Evaluating MLP stacking meta-learner...")
-
-        sklearn_stack = []
-        if "xgb" in models:
-            sklearn_stack.append(("XGBoost", models["xgb"]))
-        if "rf" in models:
-            sklearn_stack.append(("RandomForest", models["rf"]))
-        if "catboost" in models:
-            sklearn_stack.append(("CatBoost", models["catboost"]))
-
-        torch_preds = []
-        if "saint" in models:
-            torch_preds.append(("SAINT", models["saint"]))
-        if "tabnet" in models:
-            torch_preds.append(("TabNet", models["tabnet"]))
-
-        # Build meta-features from TEST predictions only
-        if len(sklearn_stack) > 0:
-            X_meta_test_sklearn = build_meta_features(sklearn_stack, X_test)
-        else:
-            X_meta_test_sklearn = np.empty((len(X_test), 0))
-
-        torch_blocks = [model_predict_proba(p, X_test) for _, p in torch_preds]
-
-        if len(torch_blocks) > 0:
-            X_meta_test = np.hstack([X_meta_test_sklearn] + torch_blocks)
-        else:
-            X_meta_test = X_meta_test_sklearn
-
-        mlp = models["mlp_stack"]
-
-        expected_dim = getattr(mlp, "n_features_in_", None)
-        if expected_dim is not None and X_meta_test.shape[1] != expected_dim:
-            raise RuntimeError(
-                f"Meta-feature dimension mismatch: "
-                f"got {X_meta_test.shape[1]}, expected {expected_dim}. "
-                f"Do NOT pad/trim — retrain stack properly."
-            )
-
-        y_pred = mlp.predict(X_meta_test)
-
-        acc = accuracy_score(y_test, y_pred)
-        f1m = f1_score(y_test, y_pred, average="macro")
-        f1w = f1_score(y_test, y_pred, average="weighted")
-
-        print(
-            f"mlp_stack   | "
-            f"Acc: {acc:.4f} | "
-            f"F1-m: {f1m:.4f} | "
-            f"F1-w: {f1w:.4f}"
-        )
+    # MLP stacking evaluation removed; only base learners are evaluated in this test.
 
 
 if __name__ == "__main__":
