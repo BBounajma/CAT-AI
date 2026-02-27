@@ -99,12 +99,26 @@ def load_tabnet_predictor(models_dir):
 		tabnet_model.load_state_dict(state_dict, strict=True)
 		tabnet_model.eval()
 
-		print(f"✓ TabNet loaded from {tabnet_model_path}")
-		return make_torch_tabular_predictor(tabnet_model, tab_preprocessor)
+			print(f"✓ TabNet loaded from {tabnet_model_path}")
+			predictor = make_torch_tabular_predictor(tabnet_model, tab_preprocessor)
+			tabnet_oof_path = os.path.join(tabnet_dir, "tabnet_oof_preds.npy")
+			if os.path.exists(tabnet_oof_path):
+				try:
+					predictor["oof"] = np.load(tabnet_oof_path)
+				except Exception:
+					pass
+			return predictor
 	except Exception as exc:
 		print(f"✗ Error loading TabNet: {exc}")
 		return None
 
+
+	catboost_path = os.path.join(models_dir, 'CatBoost/cat_classifier_model.joblib')
+	if os.path.exists(catboost_path):
+		cat_model = joblib.load(catboost_path)
+		print(f"✓ CatBoost loaded from {catboost_path}")
+	else:
+		cat_model = None
 
 def main():
 	script_dir = os.path.dirname(os.path.abspath(__file__))

@@ -8,7 +8,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPClassifier
 
 try:
-	from Ensemble.MLP_stacking import (
+	from Ensemble.utils_stacking import (
 		ablation_impact,
 		build_meta_features,
 		build_meta_features_oof,
@@ -18,7 +18,7 @@ try:
 		summarize_model_usage,
 	)
 except ModuleNotFoundError:
-	from MLP_stacking import (
+	from utils_stacking import (
 		ablation_impact,
 		build_meta_features,
 		build_meta_features_oof,
@@ -81,6 +81,13 @@ def main():
 		print(f"✗ Random Forest model not found at {rf_path}")
 		print("  Run: python Trainings/train_rf.py")
 		rf_model = None
+
+	catboost_path = os.path.join(models_dir, "CatBoost/cat_classifier_model.joblib")
+	if os.path.exists(catboost_path):
+		cat_model = joblib.load(catboost_path)
+		print(f"✓ CatBoost loaded from {catboost_path}")
+	else:
+		cat_model = None
 
 	saint_predictor = load_saint_predictor(models_dir)
 

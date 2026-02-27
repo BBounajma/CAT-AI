@@ -96,6 +96,13 @@ def main():
 		print("  Run: python Trainings/train_rf.py")
 		rf_model = None
 
+	catboost_path = os.path.join(models_dir, 'CatBoost/cat_classifier_model.joblib')
+	if os.path.exists(catboost_path):
+		cat_model = joblib.load(catboost_path)
+		print(f"✓ CatBoost loaded from {catboost_path}")
+	else:
+		cat_model = None
+
 	saint_dir = os.path.join(models_dir, 'Saint')
 	saint_model_path = os.path.join(saint_dir, 'model_state_dict.pt')
 	saint_preprocessor_path = os.path.join(saint_dir, 'tab_preprocessor.joblib')

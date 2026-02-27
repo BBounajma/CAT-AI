@@ -11,7 +11,7 @@ from sklearn.neural_network import MLPClassifier
 from pytorch_widedeep.models import TabNet, WideDeep
 
 try:
-	from Ensemble.MLP_stacking import (
+	from Ensemble.utils_stacking import (
 		ablation_impact,
 		build_meta_features,
 		build_meta_features_oof,
@@ -21,7 +21,7 @@ try:
 		summarize_model_usage,
 	)
 except ModuleNotFoundError:
-	from MLP_stacking import (
+	from utils_stacking import (
 		ablation_impact,
 		build_meta_features,
 		build_meta_features_oof,
@@ -79,7 +79,14 @@ def load_tabnet_predictor(models_dir):
 		tabnet_model.load_state_dict(state_dict, strict=True)
 
 		print(f"✓ TabNet loaded from {tabnet_model_path}")
-		return make_torch_tabular_predictor(tabnet_model, tab_preprocessor)
+		predictor = make_torch_tabular_predictor(tabnet_model, tab_preprocessor)
+		tabnet_oof_path = os.path.join(tabnet_dir, "tabnet_oof_preds.npy")
+		if os.path.exists(tabnet_oof_path):
+			try:
+				predictor["oof"] = np.load(tabnet_oof_path)
+			except Exception:
+				pass
+		return predictor
 	except Exception as exc:
 		print(f"✗ Error loading TabNet: {exc}")
 		return None
@@ -137,6 +144,13 @@ def main():
 		print(f"✗ Random Forest model not found at {rf_path}")
 		print("  Run: python Trainings/train_rf.py")
 		rf_model = None
+
+	catboost_path = os.path.join(models_dir, "CatBoost/cat_classifier_model.joblib")
+	if os.path.exists(catboost_path):
+		cat_model = joblib.load(catboost_path)
+		print(f"✓ CatBoost loaded from {catboost_path}")
+	else:
+		cat_model = None
 
 	tabnet_predictor = load_tabnet_predictor(models_dir)
 

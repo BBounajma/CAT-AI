@@ -86,8 +86,15 @@ def load_saint_predictor(models_dir):
 
     model = WideDeep(deeptabular=saint, pred_dim=5)
     model.load_state_dict(torch.load(model_path, map_location="cpu"))
+    predictor = make_torch_tabular_predictor(model, preprocessor)
+    saint_oof_path = os.path.join(saint_dir, "saint_oof_preds.npy")
+    if os.path.exists(saint_oof_path):
+        try:
+            predictor["oof"] = np.load(saint_oof_path)
+        except Exception:
+            pass
 
-    return make_torch_tabular_predictor(model, preprocessor)
+    return predictor
 
 
 # ============================================================

@@ -64,6 +64,9 @@ df.rename(columns={
     "Structural Damage (5-class)": "damage_grade"
 }, inplace=True)
 
+# Delete the Total Height 
+df.drop("Total Height", axis=1, inplace=True)
+
 # Add the missing columns with realistic default values
 
 df["foundation_type"] = 4

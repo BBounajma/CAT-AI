@@ -8,9 +8,10 @@ from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPClassifier
 from pytorch_widedeep.models import TabNet, WideDeep
+from sklearn.calibration import CalibratedClassifierCV
 
 try:
-	from Ensemble.MLP_stacking import (
+	from Ensemble.utils_stacking import (
 		ablation_impact,
 		build_meta_features,
 		build_meta_features_oof,
@@ -21,7 +22,7 @@ try:
 		summarize_model_usage,
 	)
 except ModuleNotFoundError:
-	from MLP_stacking import (
+	from utils_stacking import (
 		ablation_impact,
 		build_meta_features,
 		build_meta_features_oof,
@@ -80,7 +81,14 @@ def load_tabnet_predictor(models_dir):
 		tabnet_model.load_state_dict(state_dict, strict=True)
 
 		print(f"✓ TabNet loaded from {tabnet_model_path}")
-		return make_torch_tabular_predictor(tabnet_model, tab_preprocessor)
+		predictor = make_torch_tabular_predictor(tabnet_model, tab_preprocessor)
+		tabnet_oof_path = os.path.join(tabnet_dir, "tabnet_oof_preds.npy")
+		if os.path.exists(tabnet_oof_path):
+			try:
+				predictor["oof"] = np.load(tabnet_oof_path)
+			except Exception:
+				pass
+		return predictor
 	except Exception as exc:
 		print(f"✗ Error loading TabNet: {exc}")
 		return None
@@ -124,6 +132,7 @@ def main():
 	xgb_path = os.path.join(models_dir, "XG_boost/xgb_classifier_model.joblib")
 	if os.path.exists(xgb_path):
 		xgb_model = joblib.load(xgb_path)
+		xgb_model = CalibratedClassifierCV(xgb_model, method="isotonic", cv=3)
 		print(f"✓ XGBoost loaded from {xgb_path}")
 	else:
 		print(f"✗ XGBoost model not found at {xgb_path}")
@@ -133,11 +142,20 @@ def main():
 	rf_path = os.path.join(models_dir, "Random_Forest/rf_classifier_model.joblib")
 	if os.path.exists(rf_path):
 		rf_model = joblib.load(rf_path)
+		rf_model = CalibratedClassifierCV(rf_model, method="isotonic", cv=3)
 		print(f"✓ Random Forest loaded from {rf_path}")
 	else:
 		print(f"✗ Random Forest model not found at {rf_path}")
 		print("  Run: python Trainings/train_rf.py")
 		rf_model = None
+
+	catboost_path = os.path.join(models_dir, "CatBoost/cat_classifier_model.joblib")
+	if os.path.exists(catboost_path):
+		cat_model = joblib.load(catboost_path)
+		cat_model = CalibratedClassifierCV(cat_model, method="isotonic", cv=3)
+		print(f"✓ CatBoost loaded from {catboost_path}")
+	else:
+		cat_model = None
 
 	saint_predictor = load_saint_predictor(models_dir)
 	tabnet_predictor = load_tabnet_predictor(models_dir)
@@ -147,6 +165,8 @@ def main():
 		classifiers.append(("XGBoost", xgb_model))
 	if rf_model is not None:
 		classifiers.append(("Random Forest", rf_model))
+	if cat_model is not None:
+		classifiers.append(("CatBoost", cat_model))
 	if saint_predictor is not None:
 		classifiers.append(("SAINT", saint_predictor))
 	if tabnet_predictor is not None:
@@ -158,6 +178,7 @@ def main():
 
 	print(f"\nUsing {len(classifiers)} models for stacking")
 
+	"""
 	print("\n" + "=" * 70)
 	print("Individual Model Performance on Test Set")
 	print("=" * 70)
@@ -173,7 +194,7 @@ def main():
 	print("\n" + "=" * 70)
 	print("MLP Stacking Performance")
 	print("=" * 70)
-
+	"""
 	X_meta_source = pd.concat([X_train, X_val], axis=0).reset_index(drop=True)
 	y_meta_source = pd.concat([y_train, y_val], axis=0).reset_index(drop=True)
 
@@ -185,18 +206,20 @@ def main():
 		n_splits=5,
 		random_state=42,
 	)
+	print(f"DEBUG: X_meta_train.shape = {X_meta_train.shape}")
 	X_meta_test = build_meta_features(stacked_classifiers, X_test)
+	print(f"DEBUG: X_meta_test.shape = {X_meta_test.shape}")
 
 	mlp_meta = MLPClassifier(
-		hidden_layer_sizes=(48, 24),
-		activation="tanh",
+		hidden_layer_sizes=(32,),
+		activation="relu",
 		solver="adam",
-		alpha=5e-4,
+		alpha=1e-2,
 		batch_size=64,
-		learning_rate_init=1e-3,
-		max_iter=300,
+		learning_rate_init=5e-4,
+		max_iter=500,
 		early_stopping=True,
-		n_iter_no_change=15,
+		n_iter_no_change=25,
 		random_state=42,
 	)
 
@@ -221,12 +244,6 @@ def main():
 		print(f"{name:20s} | strength: {raw_score:.6f} | share: {pct*100:6.2f}%")
 
 	print("\n" + "=" * 70)
-	print("Model Ablation Impact on Stacking (drop after neutralization)")
-	print("=" * 70)
-	base_acc, base_f1, ablation = ablation_impact(mlp_meta, stacked_classifiers, X_test, y_test)
-	print(f"Baseline stacking -> Acc: {base_acc:.4f} | F1-Macro: {base_f1:.4f}")
-	for name, d_acc, d_f1 in ablation:
-		print(f"{name:20s} | ΔAcc: {d_acc:+.4f} | ΔF1-Macro: {d_f1:+.4f}")
 
 	meta_model_path = os.path.join(models_dir, "mlp_stacking_saint_tabnet_model.joblib")
 	meta_info_path = os.path.join(models_dir, "mlp_stacking_saint_tabnet_info.joblib")

@@ -6,7 +6,7 @@ import pandas as pd
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score
-from sklearn.neural_network import MLPClassifier
+from sklearn.linear_model import LogisticRegression
 
 from utils_stacking import (
     build_meta_features,
@@ -56,6 +56,7 @@ def load_tabnet_predictor(models_dir):
 
     model = WideDeep(deeptabular=tabnet, pred_dim=5)
     model.load_state_dict(torch.load(model_path, map_location="cpu"))
+
     predictor = make_torch_tabular_predictor(model, tab_preprocessor)
     tabnet_oof_path = os.path.join(tabnet_dir, "tabnet_oof_preds.npy")
     if os.path.exists(tabnet_oof_path):
@@ -78,7 +79,7 @@ def main():
     data_path = os.path.join(project_root, "Data/processed_new_data2.csv")
 
     print("=" * 70)
-    print("MLP Stacking (Leakage-Free): XGBoost + RF + SAINT + TabNet")
+    print("Logistic Regression Stacking (Leakage-Free)")
     print("=" * 70)
 
     # --------------------------------------------------------
@@ -150,28 +151,11 @@ def main():
     if len(sklearn_models) + len(torch_models) < 2:
         raise RuntimeError("Need at least two base models for stacking")
 
-    """
-    # --------------------------------------------------------
-    # Individual model performance
-    # --------------------------------------------------------
-    print("\n" + "=" * 70)
-    print("Individual Model Performance (Test)")
-    print("=" * 70)
-
-    for name, clf in sklearn_models + torch_models:
-        y_pred = model_predict(clf, X_test)
-        print(
-            f"{name:20s} | "
-            f"Acc: {accuracy_score(y_test, y_pred):.4f} | "
-            f"F1-Macro: {f1_score(y_test, y_pred, average='macro'):.4f}"
-        )
-    """
     # --------------------------------------------------------
     # Build OOF meta-features (TRAIN)
     # --------------------------------------------------------
     print("\nBuilding meta-features (true OOF)...")
 
-    # 1) OOF for sklearn models
     X_meta_sklearn, sklearn_stack = build_meta_features_oof(
         sklearn_models,
         X_meta_source,
@@ -186,11 +170,9 @@ def main():
 
     oof_blocks = [X_meta_sklearn]
 
-    # 2) Load OOF predictions for torch models (track which were included)
     included_torch_names = []
     included_torch_predictors = []
 
-    # use the same capitalization as the saved model folder
     saint_oof_path = os.path.join(models_dir, "Saint", "saint_oof_preds.npy")
     if os.path.exists(saint_oof_path):
         oof_blocks.append(np.load(saint_oof_path))
@@ -201,7 +183,6 @@ def main():
         oof_blocks.append(np.load(tabnet_oof_path))
         included_torch_names.append("TabNet")
 
-    # collect predictor wrappers for only the included torch OOFs (preserve order)
     for name, pred in torch_models:
         if name in included_torch_names:
             included_torch_predictors.append((name, pred))
@@ -209,23 +190,17 @@ def main():
     X_meta_train = np.hstack(oof_blocks)
 
     # --------------------------------------------------------
-    # Build meta-features (TEST) using FINAL models
-    # Match training: enhanced meta-features for sklearn models
-    # combined with raw torch probability blocks.
+    # Build meta-features (TEST)
     # --------------------------------------------------------
-    # Build enhanced meta-features on test across the SAME ordered set of
-    # base-model blocks used for training (sklearn_stack + included torch predictors).
-    # This ensures aux features (top1/margin/entropy and cross-model stats)
-    # are computed consistently and the MLP input dimension matches.
-    # Build test meta-features the same way we built training meta-features:
-    # enhanced features for the sklearn stack, then raw torch probability blocks
-    # appended in the same order. This ensures the MLP input dimension matches.
     if len(sklearn_stack) > 0:
         X_meta_test_sklearn = build_meta_features(sklearn_stack, X_test)
     else:
         X_meta_test_sklearn = np.empty((len(X_test), 0))
 
-    torch_blocks_test = [model_predict_proba(pred, X_test) for _, pred in included_torch_predictors]
+    torch_blocks_test = [
+        model_predict_proba(pred, X_test)
+        for _, pred in included_torch_predictors
+    ]
 
     if len(torch_blocks_test) > 0:
         X_meta_test = np.hstack([X_meta_test_sklearn] + torch_blocks_test)
@@ -233,28 +208,25 @@ def main():
         X_meta_test = X_meta_test_sklearn
 
     # --------------------------------------------------------
-    # Train meta-learner
+    # Train meta-learner (LOGISTIC REGRESSION)
     # --------------------------------------------------------
-    mlp = MLPClassifier(
-        hidden_layer_sizes=(48, 24),
-        activation="tanh",
-        solver="adam",
-        alpha=5e-4,
-        learning_rate_init=1e-3,
-        batch_size=64,
-        max_iter=300,
-        early_stopping=True,
-        n_iter_no_change=15,
+    meta = LogisticRegression(
+        multi_class="multinomial",
+        solver="lbfgs",
+        C=0.2,
+        class_weight="balanced",
+        max_iter=2000,
+        n_jobs=-1,
         random_state=42,
     )
 
-    print("Training MLP meta-learner...")
-    mlp.fit(X_meta_train, y_meta_source)
+    print("Training Logistic Regression meta-learner...")
+    meta.fit(X_meta_train, y_meta_source)
 
     # --------------------------------------------------------
     # Evaluation
     # --------------------------------------------------------
-    y_pred = mlp.predict(X_meta_test)
+    y_pred = meta.predict(X_meta_test)
 
     print("\n" + "=" * 70)
     print("Stacking Performance (Test)")
@@ -266,27 +238,59 @@ def main():
     # --------------------------------------------------------
     # Diagnostics
     # --------------------------------------------------------
-    # stacked_classifiers should reflect the same order used to build meta-features
     stacked_classifiers = sklearn_stack + included_torch_predictors
 
-    # Diagnostic: show exactly which models were stacked and their order
     print("\nStacked classifiers order:")
     for i, (n, _) in enumerate(stacked_classifiers):
         print(f"  {i}: {n}")
 
-    n_classes = model_predict_proba(stacked_classifiers[0][1], X_test.iloc[:1]).shape[1]
+    n_classes = model_predict_proba(
+        stacked_classifiers[0][1], X_test.iloc[:1]
+    ).shape[1]
 
     print("\n" + "=" * 70)
-    print("Model Usage (MLP first-layer weights)")
+    print("Model Usage (absolute coefficient mass)")
     print("=" * 70)
-    for name, raw, pct in summarize_model_usage(mlp, stacked_classifiers, n_classes):
-        print(f"{name:20s} | strength: {raw:.6f} | share: {pct*100:6.2f}%")
+
+    # Compute model usage directly from LogisticRegression `coef_` to avoid
+    # depending on MLP-specific attributes in `MLP_stacking.summarize_model_usage`.
+    # coef_ shape: (n_classes, n_meta_features)
+    if not hasattr(meta, "coef_"):
+        raise ValueError("Meta-learner does not expose `coef_`; cannot compute usage")
+
+    feature_strength = np.mean(np.abs(meta.coef_), axis=0)
+
+    # Count sklearn-like base models (those that were OOF-trained)
+    sklearn_count = sum(
+        1 for _, clf in stacked_classifiers if hasattr(clf, "fit") and hasattr(clf, "predict_proba")
+    )
+
+    # Compute enhanced block size used during training: see _build_enhanced_meta_features
+    if sklearn_count > 0:
+        enhanced_block_size = sklearn_count * n_classes + 3 * sklearn_count + n_classes + 3
+    else:
+        enhanced_block_size = 0
+
+    model_scores = []
+    for model_idx, (name, _) in enumerate(stacked_classifiers):
+        if model_idx < sklearn_count:
+            start = model_idx * n_classes
+        else:
+            torch_idx = model_idx - sklearn_count
+            start = enhanced_block_size + torch_idx * n_classes
+        end = start + n_classes
+        score = feature_strength[start:end].mean()
+        model_scores.append((name, score))
+
+    total = sum(s for _, s in model_scores) + 1e-12
+    for name, score in model_scores:
+        print(f"{name:20s} | strength: {score:.6f} | share: {score/total*100:6.2f}%")
 
     print("\n" + "=" * 70)
     print("Ablation Impact")
     print("=" * 70)
     base_acc, base_f1, drops = ablation_impact(
-        mlp, stacked_classifiers, X_test, y_test
+        meta, stacked_classifiers, X_test, y_test
     )
     print(f"Baseline -> Acc: {base_acc:.4f} | F1: {base_f1:.4f}")
     for name, d_acc, d_f1 in drops:
@@ -295,13 +299,18 @@ def main():
     # --------------------------------------------------------
     # Save
     # --------------------------------------------------------
-    joblib.dump(mlp, os.path.join(models_dir, "mlp_stacking_saint_tabnet_model.joblib"))
+    joblib.dump(
+        meta,
+        os.path.join(models_dir, "logreg_stacking_saint_tabnet_model.joblib"),
+    )
     joblib.dump(
         {
             "base_models": [n for n, _ in stacked_classifiers],
             "meta_dim": X_meta_train.shape[1],
         },
-        os.path.join(models_dir, "mlp_stacking_saint_tabnet_info.joblib"),
+        os.path.join(
+            models_dir, "logreg_stacking_saint_tabnet_info.joblib"
+        ),
     )
 
     print("\n✓ Meta-learner saved")
