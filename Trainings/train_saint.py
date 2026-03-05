@@ -1,16 +1,21 @@
+"""
+Train a saint classifier model on the training data from Nepal. 
+"""
+
+
 import os
 import sys
-
 from pathlib import Path
 import pandas as pd
 import numpy as np
 import joblib
+
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
 
 import torch
 import torch.nn as nn
-from torch.optim import SGD, lr_scheduler, AdamW
+from torch.optim import AdamW
 from torchmetrics.classification import MulticlassF1Score, MulticlassFBetaScore, AUROC
 
 from pytorch_widedeep import Trainer
@@ -21,19 +26,6 @@ from pytorch_widedeep.initializers import XavierNormal
 
 torch.manual_seed(42)
 np.random.seed(42)
-
-
-class FocalLoss(nn.Module):
-    def __init__(self, gamma=2.0, weight=None):
-        super().__init__()
-        self.gamma = gamma
-        self.ce = nn.CrossEntropyLoss(weight=weight)
-
-    def forward(self, logits, targets):
-        ce_loss = self.ce(logits, targets)
-        pt = torch.exp(-ce_loss)
-        return ((1 - pt) ** self.gamma * ce_loss).mean()
-
 
 if __name__ == '__main__':
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'Models'))
@@ -90,6 +82,7 @@ if __name__ == '__main__':
     y_valid = y_valid.reset_index(drop=True)
     y_test = y_test.reset_index(drop=True)
 
+    #Widedeep preprocessor for tabular data
     tab_preprocessor = TabPreprocessor(
         cat_embed_cols=multi_class_cat_cols,
         continuous_cols=all_continuous_cols,
@@ -100,6 +93,8 @@ if __name__ == '__main__':
     X_train_tab = tab_preprocessor.fit_transform(X_train)
     X_valid_tab = tab_preprocessor.transform(X_valid)
     X_test_tab = tab_preprocessor.transform(X_test)
+
+    #Widedeep implementation of a Saint classifier model
 
     saint = SAINT(
         column_idx=tab_preprocessor.column_idx,
@@ -140,8 +135,6 @@ if __name__ == '__main__':
         weight=class_weights,
         label_smoothing=0.05
     )
-
-    #loss_fn = FocalLoss(gamma=2.0, weight=class_weights)
 
     deep_opt = AdamW(
         model.deeptabular.parameters(),
@@ -201,9 +194,9 @@ if __name__ == '__main__':
     model_config = {
         'model_type': 'SAINT',
         'architecture': {
-            'input_dim': 32,
-            'n_heads': 4,
-            'n_blocks':24,
+            'input_dim': 64,
+            'n_heads': 8,
+            'n_blocks':3,
             'attn_dropout': 0.05,
             'ff_dropout': 0.05,
             'pred_dim': 5
@@ -221,7 +214,7 @@ if __name__ == '__main__':
     }
     joblib.dump(model_config, target_dir / 'config.joblib')
 
-    print('✓ Model artifacts saved')
+    print('Model artifacts saved')
 
     print('\nEvaluating on test set...')
     y_pred = trainer.predict(X_tab=X_test_tab)

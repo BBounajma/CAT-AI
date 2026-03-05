@@ -1,20 +1,23 @@
+"""
+Fit a random forest model on the training data from Nepal. Optimizes the hyperparameters via
+grid search.
+"""
+
+
+
 import os
 import pandas as pd
 import numpy as np
 import sys
 import joblib
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler, LabelEncoder, OrdinalEncoder
-from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
 
-# Script path setup
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'Models'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'Data'))
 
-# Load data - adjust path as per your setup
+
 df = pd.read_csv("Data/processed_new_data2.csv")  # Linux version
 #df = pd.read_csv("Data\processed_new_data2.csv")  # Windows version
 
@@ -28,7 +31,6 @@ multi_class_cat_cols = [
 
 y=df["damage_grade"] 
 
-#label encoding for multi-class categorical columns
 for col in multi_class_cat_cols:
     df[col] = df[col].astype('category').cat.codes
 
@@ -47,7 +49,7 @@ X_train, X_valid, y_train, y_valid = train_test_split(
 # Hyperparameter Optimization for Random Forest using GridSearchCV
 print("Starting hyperparameter optimization for random forest...")
 
-# Define parameter grid for Random Forest (optimized for faster search)
+# Define parameter grid for Random Forest 
 param_grid = {
     'n_estimators': [200, 300],
     'max_depth': [25, 35],
@@ -57,7 +59,7 @@ param_grid = {
     'bootstrap': [True],
 }
 
-# Create Random Forest classifier
+
 rf_base = RandomForestClassifier(random_state=42, n_jobs=-1)
 
 # Perform GridSearchCV for hyperparameter optimization
@@ -70,7 +72,7 @@ grid_search = GridSearchCV(
     verbose=2
 )
 
-# Fit grid search on training data
+
 grid_search.fit(X_train, y_train)
 
 # Get best model

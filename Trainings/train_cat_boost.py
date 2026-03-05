@@ -1,12 +1,12 @@
+"""
+Fit a catboost model on training data from Nepal. Use gridsearch for hyperparmeters optimization.
+"""
+
 import os
 import pandas as pd
 import numpy as np
 import sys
 import joblib
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler, LabelEncoder, OrdinalEncoder
-from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split, GridSearchCV
 from catboost import CatBoostClassifier
 
@@ -14,7 +14,6 @@ from catboost import CatBoostClassifier
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'Models'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'Data'))
 
-# Load data - adjust path as per your setup
 df = pd.read_csv("Data/processed_new_data2.csv")  # Linux version
 #df = pd.read_csv("Data\processed_new_data2.csv")  # Windows version
 
@@ -32,7 +31,6 @@ X_processed = df.drop("damage_grade", axis=1)
 
 
 
-# Split data into training, validation, and test sets
 X_train, X_test, y_train, y_test = train_test_split(
     X_processed, y, test_size=0.3, random_state=42, stratify=y
 )
@@ -40,10 +38,9 @@ X_train, X_valid, y_train, y_valid = train_test_split(
     X_train, y_train, test_size=0.3, random_state=42, stratify=y_train
 )
 
-# Hyperparameter Optimization for CatBoost using GridSearchCV
 print("Starting hyperparameter optimization for CatBoost...")
 
-# Define parameter grid for CatBoost (optimized for faster search)
+# Define parameter grid for CatBoost 
 param_grid = {
     'iterations': [100, 200],
     'depth': [4, 6],
@@ -52,7 +49,6 @@ param_grid = {
     'subsample': [0.7, 1.0],
 }
 
-# Create CatBoost classifier base model with cat_features as column names
 cat_base = CatBoostClassifier(
     random_state=42,
     verbose=0,
@@ -69,7 +65,6 @@ grid_search = GridSearchCV(
     verbose=2
 )
 
-# Fit grid search on training data
 grid_search.fit(X_train, y_train, cat_features=multi_class_cat_cols)
 
 # Get best model
@@ -91,3 +86,4 @@ models_dir = os.path.join(os.path.dirname(__file__), '..', 'Models','CatBoost')
 os.makedirs(models_dir, exist_ok=True)
 joblib.dump(cat_model, os.path.join(models_dir, 'cat_classifier_model.joblib'))
 joblib.dump(grid_search, os.path.join(models_dir, 'cat_grid_search.joblib'))
+print("Best model and grid search saved")

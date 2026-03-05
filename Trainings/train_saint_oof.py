@@ -1,3 +1,7 @@
+"""
+Train a saint classifier model in an OOF manner (for MLP stacking) on the training data from Nepal.
+"""
+
 import os
 import sys
 from pathlib import Path
@@ -20,15 +24,12 @@ from pytorch_widedeep.models import WideDeep, SAINT
 from pytorch_widedeep.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_widedeep.initializers import XavierNormal
 
-# ------------------------------------------------------------------
-# Reproducibility
-# ------------------------------------------------------------------
+
 torch.manual_seed(42)
 np.random.seed(42)
 
-# ------------------------------------------------------------------
+
 # Configuration
-# ------------------------------------------------------------------
 N_SPLITS = 5
 N_CLASSES = 5
 BATCH_SIZE = 256
@@ -39,9 +40,8 @@ DATA_PATH = "Data/processed_new_data2.csv"
 OUT_DIR = Path("Models/Saint")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# ------------------------------------------------------------------
+
 # Data loading
-# ------------------------------------------------------------------
 df = pd.read_csv(DATA_PATH)
 
 multi_class_cat_cols = [
@@ -90,9 +90,7 @@ y_test = y_test.reset_index(drop=True)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ------------------------------------------------------------------
-# Loss & metrics
-# ------------------------------------------------------------------
+# Loss and metrics
 counts = np.bincount(y_train.values)
 counts[counts == 0] = 1
 weights = 1.0 / counts
@@ -109,9 +107,8 @@ f1_macro = MulticlassF1Score(
     average="macro"
 ).to(device)
 
-# ------------------------------------------------------------------
+
 # Model builder
-# ------------------------------------------------------------------
 def build_saint(tab_preprocessor):
     saint = SAINT(
         column_idx=tab_preprocessor.column_idx,
@@ -125,9 +122,8 @@ def build_saint(tab_preprocessor):
     )
     return WideDeep(deeptabular=saint, pred_dim=N_CLASSES)
 
-# ------------------------------------------------------------------
+
 # OOF training
-# ------------------------------------------------------------------
 print("\n===== SAINT OOF TRAINING =====")
 
 skf = StratifiedKFold(
@@ -144,9 +140,6 @@ for fold, (tr_idx, val_idx) in enumerate(skf.split(X_train, y_train), 1):
     X_tr, X_val = X_train.iloc[tr_idx], X_train.iloc[val_idx]
     y_tr, y_val = y_train.iloc[tr_idx], y_train.iloc[val_idx]
 
-    # Ensure targets use a contiguous RangeIndex so DataLoader worker
-    # positional indexing (0..n-1) does not raise a KeyError when
-    # pytorch_widedeep accesses self.Y[idx]
     y_tr = y_tr.reset_index(drop=True)
     y_val = y_val.reset_index(drop=True)
 
@@ -200,7 +193,7 @@ for fold, (tr_idx, val_idx) in enumerate(skf.split(X_train, y_train), 1):
 
 # Save OOF predictions
 np.save(OUT_DIR / "saint_oof_preds.npy", oof_preds)
-print("\n✓ Saved OOF predictions")
+print("\n Saved OOF predictions")
 
 # ------------------------------------------------------------------
 # Final model (full training data)
@@ -278,11 +271,9 @@ joblib.dump(
     OUT_DIR / "config.joblib",
 )
 
-print("\n✓ SAINT artifacts saved")
+print("\n SAINT artifacts saved")
 
-# ------------------------------------------------------------------
 # Test evaluation
-# ------------------------------------------------------------------
 y_pred = trainer.predict(X_tab=X_test_tab)
 
 print("\n===== FINAL TEST PERFORMANCE =====")

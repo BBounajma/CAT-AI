@@ -1,6 +1,10 @@
+"""
+Train a tabnet model on data from Nepal.
+"""
+
 import os
 import sys
-import einops
+
 
 from pathlib import Path
 import pandas as pd
@@ -14,7 +18,6 @@ from torchmetrics.classification import MulticlassF1Score, MulticlassFBetaScore
 from pytorch_widedeep import Trainer
 from pytorch_widedeep.preprocessing import TabPreprocessor
 from pytorch_widedeep.models import WideDeep
-from pytorch_widedeep.metrics import Accuracy, F1Score
 from pytorch_widedeep.models import TabNet
 from pytorch_widedeep.callbacks import EarlyStopping, ModelCheckpoint
 
@@ -22,9 +25,7 @@ torch.manual_seed(42)
 np.random.seed(42)
 
 
-# ------------------------------------------------------------------
 # Focal Loss
-# ------------------------------------------------------------------
 class FocalLoss(nn.Module):
     def __init__(self, gamma=2.0, weight=None):
         super().__init__()
@@ -38,9 +39,7 @@ class FocalLoss(nn.Module):
 
 
 if __name__ == '__main__':
-    # ------------------------------------------------------------------
     # Load data
-    # ------------------------------------------------------------------
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'Models'))
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'Data'))
 
@@ -81,9 +80,7 @@ if __name__ == '__main__':
     y_valid = (y_valid ).astype(np.int64)
     y_test  = (y_test  ).astype(np.int64)
 
-    # ------------------------------------------------------------------
-    # Tabular preprocessing
-    # ------------------------------------------------------------------
+    # Tabular preprocessing from the widedeep library
     tab_preprocessor = TabPreprocessor(
         cat_embed_cols=multi_class_cat_cols,
         continuous_cols=num_cols,
@@ -95,23 +92,21 @@ if __name__ == '__main__':
     X_valid_tab = tab_preprocessor.transform(X_valid)
     X_test_tab  = tab_preprocessor.transform(X_test)
 
-    # ------------------------------------------------------------------
-    # TabNet + WideDeep model (PARAMS IMPROVED)
-    # ------------------------------------------------------------------
+    # TabNet model
     tabnet = TabNet(
         column_idx=tab_preprocessor.column_idx,
         cat_embed_input=tab_preprocessor.cat_embed_input,
         continuous_cols=num_cols,
 
-        n_steps=7,                    # ↑ more decision steps
-        step_dim=128,                 # ↑ representation capacity
-        attn_dim=128,                 # ↑ attention capacity
-        dropout=0.2,                  # ↑ regularization
+        n_steps=7,                    
+        step_dim=128,                 
+        attn_dim=128,                 
+        dropout=0.2,                  
 
         n_glu_step_dependent=2,
         n_glu_shared=2,
 
-        gamma=1.3,                    # ↓ less aggressive feature reuse
+        gamma=1.3,                    
         epsilon=1e-15,
 
         ghost_bn=True,
@@ -126,9 +121,7 @@ if __name__ == '__main__':
         pred_dim=5
     )
 
-    # ------------------------------------------------------------------
     # Trainer
-    # ------------------------------------------------------------------
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
@@ -154,6 +147,7 @@ if __name__ == '__main__':
         restore_best_weights=True
     )
 
+    #Trainer from the widedeep library
     trainer = Trainer(
         model=model,
         objective="multiclass",
@@ -175,9 +169,7 @@ if __name__ == '__main__':
         max_save=1
     )
 
-    # ------------------------------------------------------------------
     # Train
-    # ------------------------------------------------------------------
     trainer.fit(
         X_tab=X_train_tab,
         target=y_train.values,
@@ -188,18 +180,14 @@ if __name__ == '__main__':
         clip_grad_norm=1.0,
         callbacks=[early_stopping, model_checkpoint]
     )
-
-    # ------------------------------------------------------------------
-    # Proper saving
-    # ------------------------------------------------------------------
+    # Saving
     target_dir = Path("Models/TabNet")
     target_dir.mkdir(parents=True, exist_ok=True)
 
     joblib.dump(tab_preprocessor, target_dir / "tab_preprocessor.joblib")
     torch.save(model.state_dict(), target_dir / "model_state_dict.pt")
 
-    print("✓ Model artifacts saved")
+    print("Model artifacts saved")
 
-    # ------------------------------------------------------------------
     # Evaluation
-    # ------------------------------------------------------------
+    

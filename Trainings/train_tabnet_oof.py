@@ -1,3 +1,7 @@
+"""
+Train a tabnet classifier model in an OOF manner (for MLP stacking) on the training data from Nepal.
+"""
+
 import os
 import sys
 import numpy as np
@@ -199,7 +203,7 @@ if __name__ == "__main__":
     np.save(target_dir / "tabnet_oof_preds.npy", oof_preds)
     joblib.dump(tab_preprocessor, target_dir / "tab_preprocessor.joblib")
 
-    print("\n✓ TabNet OOF predictions saved")
+    print("\n TabNet OOF predictions saved")
 
     # --------------------------------------------------------------
     # Train FINAL model on full train+val
@@ -236,4 +240,4 @@ if __name__ == "__main__":
         target_dir / "model_state_dict.pt",
     )
 
-    print("✓ Final TabNet model saved")
+    print("Final TabNet model saved")
