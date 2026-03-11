@@ -1,0 +1,7 @@
+{
+    "train_accuracy": 0.4618357099819241,
+    "validation_accuracy": 0.46115971007248185,
+    "test_accuracy": 0.4611882132187955,
+    "n_test_samples": 228629,
+    "model_dir": "Models/TabNet"
+}

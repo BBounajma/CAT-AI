@@ -1,0 +1,7 @@
+{
+    "train_accuracy": 0.5889455713998795,
+    "validation_accuracy": 0.5126093476630842,
+    "test_accuracy": 0.5132769683635934,
+    "n_test_samples": 228629,
+    "model_dir": "/workspace/project/Trainings/../Models/XG_boost"
+}

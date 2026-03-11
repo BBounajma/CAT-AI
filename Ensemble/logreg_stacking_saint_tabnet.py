@@ -105,7 +105,7 @@ def main():
     )
 
     X_train, X_val, y_train, y_val = train_test_split(
-        X_train, y_train, test_size=0.2, stratify=y_train, random_state=42
+        X_train, y_train, test_size=0.3, stratify=y_train, random_state=42
     )
 
     X_meta_source = pd.concat([X_train, X_val]).reset_index(drop=True)

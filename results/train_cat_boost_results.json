@@ -1,0 +1,7 @@
+{
+    "train_accuracy": 0.4982767624020888,
+    "validation_accuracy": 0.4946200949762559,
+    "test_accuracy": 0.4945829269252807,
+    "n_test_samples": 228629,
+    "model_dir": "/workspace/project/Trainings/../Models/CatBoost"
+}

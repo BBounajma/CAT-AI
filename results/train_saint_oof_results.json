@@ -1,0 +1,5 @@
+{
+    "test_accuracy": 0.44837269112842204,
+    "n_test_samples": 228629,
+    "model_dir": "Models/Saint"
+}
