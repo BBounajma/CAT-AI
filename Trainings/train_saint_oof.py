@@ -17,6 +17,7 @@ from torchmetrics.classification import MulticlassF1Score
 
 from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.metrics import accuracy_score, classification_report
+import json
 
 from pytorch_widedeep import Trainer
 from pytorch_widedeep.preprocessing import TabPreprocessor
@@ -279,3 +280,17 @@ y_pred = trainer.predict(X_tab=X_test_tab)
 print("\n===== FINAL TEST PERFORMANCE =====")
 print(f"Accuracy: {accuracy_score(y_test, y_pred):.4f}")
 print(classification_report(y_test, y_pred))
+# Save results to JSON
+test_acc = float(accuracy_score(y_test, y_pred))
+results = {
+    "test_accuracy": test_acc,
+    "n_test_samples": int(len(y_test)),
+    "model_dir": str(OUT_DIR),
+}
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+results_dir = os.path.join(project_root, "results")
+os.makedirs(results_dir, exist_ok=True)
+results_path = os.path.join(results_dir, f"{os.path.splitext(os.path.basename(__file__))[0]}_results.json")
+with open(results_path, "w") as f:
+    json.dump(results, f, indent=4)
+print(f"Results saved to {results_path}")

@@ -19,6 +19,8 @@ from pytorch_widedeep import Trainer
 from pytorch_widedeep.preprocessing import TabPreprocessor
 from pytorch_widedeep.models import WideDeep, TabNet
 from pytorch_widedeep.callbacks import EarlyStopping
+from sklearn.metrics import accuracy_score
+import json
 
 # ------------------------------------------------------------------
 # Repro
@@ -241,3 +243,23 @@ if __name__ == "__main__":
     )
 
     print("Final TabNet model saved")
+    # Evaluate on hold-out test set and save results
+    try:
+        X_test_tab = tab_preprocessor.transform(X_test)
+        y_pred = trainer.predict(X_tab=X_test_tab)
+        test_acc = float(accuracy_score(y_test, y_pred))
+    except Exception:
+        test_acc = None
+
+    results = {
+        "test_accuracy": test_acc,
+        "n_test_samples": int(len(y_test)),
+        "model_dir": str(target_dir),
+    }
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    results_dir = os.path.join(project_root, "results")
+    os.makedirs(results_dir, exist_ok=True)
+    results_path = os.path.join(results_dir, f"{os.path.splitext(os.path.basename(__file__))[0]}_results.json")
+    with open(results_path, "w") as f:
+        json.dump(results, f, indent=4)
+    print(f"Results saved to {results_path}")

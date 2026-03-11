@@ -7,6 +7,7 @@ import torch
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import train_test_split
 from pytorch_widedeep.models import TabNet, WideDeep
+import json
 
 try:
 	from Ensemble.weighted_average import WeightedEnsembleLearner, StackingMetaEnsemble
@@ -169,6 +170,7 @@ def main():
 	print("\n" + "=" * 70)
 	print("Individual Model Performance on Test Set")
 	print("=" * 70)
+	individual_results = {}
 	for name, clf in classifiers:
 		if hasattr(clf, "predict"):
 			y_pred = clf.predict(X_test)
@@ -180,11 +182,17 @@ def main():
 		print(
 			f"{name:20s} | Acc: {acc:.4f} | F1-Macro: {f1_macro:.4f} | F1-Weighted: {f1_weighted:.4f}"
 		)
+		individual_results[name] = {
+			"accuracy": float(acc),
+			"f1_macro": float(f1_macro),
+			"f1_weighted": float(f1_weighted),
+		}
 
 	print("\n" + "=" * 70)
 	print("Weighted Ensemble Performance")
 	print("=" * 70)
 
+	ensemble_results = {}
 	for method in ["uniform", "grid_search", "optimization"]:
 		print(f"\n{'-' * 70}")
 		print(f"Method: {method.upper()}")
@@ -208,6 +216,11 @@ def main():
 		print(f"\nTest Accuracy:       {acc:.4f}")
 		print(f"Test F1-Macro:       {f1_macro:.4f}")
 		print(f"Test F1-Weighted:    {f1_weighted:.4f}")
+		ensemble_results[method] = {
+			"accuracy": float(acc),
+			"f1_macro": float(f1_macro),
+			"f1_weighted": float(f1_weighted),
+		}
 
 	print("\n" + "=" * 70)
 	print("Stacking Meta-Ensemble (Class-Aware)")
@@ -223,6 +236,26 @@ def main():
 	stacker.fit(X_train, y_train)
 
 	stacker.evaluate(X_test, y_test, name="Test")
+	# try to capture stacking predictions/metrics
+	stacking_result = {}
+	try:
+		y_pred_stack = stacker.predict(X_test)
+		stacking_result["accuracy"] = float(accuracy_score(y_test, y_pred_stack))
+	except Exception:
+		stacking_result["accuracy"] = None
+
+	# Save results JSON
+	results = {
+		"individual": individual_results,
+		"ensembles": ensemble_results,
+		"stacking": stacking_result,
+	}
+	results_dir = os.path.join(project_root, "results")
+	os.makedirs(results_dir, exist_ok=True)
+	results_path = os.path.join(results_dir, f"{os.path.splitext(os.path.basename(__file__))[0]}_results.json")
+	with open(results_path, "w") as f:
+		json.dump(results, f, indent=4)
+	print(f"Results saved to {results_path}")
 
 
 if __name__ == "__main__":

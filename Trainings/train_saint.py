@@ -12,6 +12,7 @@ import joblib
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
+import json
 
 import torch
 import torch.nn as nn
@@ -222,3 +223,29 @@ if __name__ == '__main__':
     print(f'Test Accuracy: {accuracy_score(y_test, y_pred):.4f}')
     print('\nClassification Report:')
     print(classification_report(y_test, y_pred))
+    # compute train/valid accuracy as well
+    try:
+        y_pred_train = trainer.predict(X_tab=X_train_tab)
+        y_pred_valid = trainer.predict(X_tab=X_valid_tab)
+        train_acc = float(accuracy_score(y_train, y_pred_train))
+        valid_acc = float(accuracy_score(y_valid, y_pred_valid))
+    except Exception:
+        train_acc = None
+        valid_acc = None
+    test_acc = float(accuracy_score(y_test, y_pred))
+
+    # Save results to JSON
+    results = {
+        "train_accuracy": train_acc,
+        "validation_accuracy": valid_acc,
+        "test_accuracy": test_acc,
+        "n_test_samples": int(len(y_test)),
+        "model_dir": str(target_dir),
+    }
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    results_dir = os.path.join(project_root, "results")
+    os.makedirs(results_dir, exist_ok=True)
+    results_path = os.path.join(results_dir, f"{os.path.splitext(os.path.basename(__file__))[0]}_results.json")
+    with open(results_path, "w") as f:
+        json.dump(results, f, indent=4)
+    print(f"Results saved to {results_path}")

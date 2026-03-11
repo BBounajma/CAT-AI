@@ -20,6 +20,8 @@ from pytorch_widedeep.preprocessing import TabPreprocessor
 from pytorch_widedeep.models import WideDeep
 from pytorch_widedeep.models import TabNet
 from pytorch_widedeep.callbacks import EarlyStopping, ModelCheckpoint
+from sklearn.metrics import accuracy_score
+import json
 
 torch.manual_seed(42)
 np.random.seed(42)
@@ -188,6 +190,31 @@ if __name__ == '__main__':
     torch.save(model.state_dict(), target_dir / "model_state_dict.pt")
 
     print("Model artifacts saved")
+    # Evaluation: compute train/valid/test accuracy and save results
+    try:
+        y_pred_train = trainer.predict(X_tab=X_train_tab)
+        y_pred_valid = trainer.predict(X_tab=X_valid_tab)
+        y_pred_test = trainer.predict(X_tab=X_test_tab)
+        train_acc = float(accuracy_score(y_train, y_pred_train))
+        valid_acc = float(accuracy_score(y_valid, y_pred_valid))
+        test_acc = float(accuracy_score(y_test, y_pred_test))
+    except Exception:
+        train_acc = None
+        valid_acc = None
+        test_acc = None
 
-    # Evaluation
+    results = {
+        "train_accuracy": train_acc,
+        "validation_accuracy": valid_acc,
+        "test_accuracy": test_acc,
+        "n_test_samples": int(len(y_test)),
+        "model_dir": str(target_dir),
+    }
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    results_dir = os.path.join(project_root, "results")
+    os.makedirs(results_dir, exist_ok=True)
+    results_path = os.path.join(results_dir, f"{os.path.splitext(os.path.basename(__file__))[0]}_results.json")
+    with open(results_path, "w") as f:
+        json.dump(results, f, indent=4)
+    print(f"Results saved to {results_path}")
     

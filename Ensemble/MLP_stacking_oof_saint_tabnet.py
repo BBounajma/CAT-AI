@@ -7,6 +7,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.neural_network import MLPClassifier
+import json
 
 from utils_stacking import (
     build_meta_features,
@@ -259,9 +260,12 @@ def main():
     print("\n" + "=" * 70)
     print("Stacking Performance (Test)")
     print("=" * 70)
-    print(f"Accuracy:  {accuracy_score(y_test, y_pred):.4f}")
-    print(f"F1-Macro:  {f1_score(y_test, y_pred, average='macro'):.4f}")
-    print(f"F1-Weight: {f1_score(y_test, y_pred, average='weighted'):.4f}")
+    acc = float(accuracy_score(y_test, y_pred))
+    f1m = float(f1_score(y_test, y_pred, average='macro'))
+    f1w = float(f1_score(y_test, y_pred, average='weighted'))
+    print(f"Accuracy:  {acc:.4f}")
+    print(f"F1-Macro:  {f1m:.4f}")
+    print(f"F1-Weight: {f1w:.4f}")
 
     # --------------------------------------------------------
     # Diagnostics
@@ -305,6 +309,22 @@ def main():
     )
 
     print("\n✓ Meta-learner saved")
+    # Save results to JSON
+    results = {
+        "accuracy": acc,
+        "f1_macro": f1m,
+        "f1_weighted": f1w,
+        "ablation_base": float(base_acc),
+        "ablation_base_f1": float(base_f1),
+        "ablation_drops": [{"name": n, "delta_acc": float(d_acc), "delta_f1": float(d_f1)} for n, d_acc, d_f1 in drops],
+        "base_models": [n for n, _ in stacked_classifiers],
+    }
+    results_dir = os.path.join(project_root, "results")
+    os.makedirs(results_dir, exist_ok=True)
+    results_path = os.path.join(results_dir, f"{os.path.splitext(os.path.basename(__file__))[0]}_results.json")
+    with open(results_path, "w") as f:
+        json.dump(results, f, indent=4)
+    print(f"Results saved to {results_path}")
     print("=" * 70)
 
 

@@ -9,6 +9,7 @@ import sys
 import joblib
 from sklearn.model_selection import train_test_split, GridSearchCV
 from catboost import CatBoostClassifier
+import json
 
 # Script path setup
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'Models'))
@@ -87,3 +88,18 @@ os.makedirs(models_dir, exist_ok=True)
 joblib.dump(cat_model, os.path.join(models_dir, 'cat_classifier_model.joblib'))
 joblib.dump(grid_search, os.path.join(models_dir, 'cat_grid_search.joblib'))
 print("Best model and grid search saved")
+# Save results to JSON
+results = {
+    "train_accuracy": float(train_accuracy),
+    "validation_accuracy": float(valid_accuracy),
+    "test_accuracy": float(test_accuracy),
+    "n_test_samples": int(len(y_test)),
+    "model_dir": models_dir,
+}
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+results_dir = os.path.join(project_root, "results")
+os.makedirs(results_dir, exist_ok=True)
+results_path = os.path.join(results_dir, f"{os.path.splitext(os.path.basename(__file__))[0]}_results.json")
+with open(results_path, "w") as f:
+    json.dump(results, f, indent=4)
+print(f"Results saved to {results_path}")
