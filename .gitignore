@@ -31,3 +31,6 @@ Data/*.csv
 
 #catboost artifacts
 catboost_info/
+
+#results
+results/*.json
