@@ -33,4 +33,4 @@ Data/*.csv
 catboost_info/
 
 #results
-results/*.json
+results/

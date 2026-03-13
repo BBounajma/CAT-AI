@@ -1,7 +1,0 @@
-{
-    "train_accuracy": 0.6283698199102898,
-    "validation_accuracy": 0.515083729067733,
-    "test_accuracy": 0.5146722419290641,
-    "n_test_samples": 228629,
-    "model_dir": "C:\\Users\\bilal\\Desktop\\CAT-AI\\Code\\Trainings\\..\\Models\\Random_Forest"
-}

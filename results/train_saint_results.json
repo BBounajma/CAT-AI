@@ -1,7 +1,0 @@
-{
-    "train_accuracy": 0.557517573810002,
-    "validation_accuracy": 0.43882154461384654,
-    "test_accuracy": 0.4399835541423004,
-    "n_test_samples": 228629,
-    "model_dir": "Models/Saint"
-}
