@@ -3,8 +3,9 @@ import sys
 
 import joblib
 import pandas as pd
+import numpy as np
 import torch
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
 from sklearn.model_selection import train_test_split
 from pytorch_widedeep.models import TabNet, WideDeep
 import json
@@ -14,6 +15,7 @@ try:
 
 except ModuleNotFoundError:
 	from weighted_average import WeightedEnsembleLearner, StackingMetaEnsemble
+individual_cms = {}
 
 try:
 	from Ensemble.utils_stacking import (
@@ -75,14 +77,14 @@ def load_tabnet_predictor(models_dir):
 		tabnet_model.eval()
 
 		print(f"✓ TabNet loaded from {tabnet_model_path}")
-			predictor = make_torch_tabular_predictor(tabnet_model, tab_preprocessor)
-			tabnet_oof_path = os.path.join(tabnet_dir, "tabnet_oof_preds.npy")
-			if os.path.exists(tabnet_oof_path):
-				try:
-					predictor["oof"] = np.load(tabnet_oof_path)
-				except Exception:
-					pass
-			return predictor
+		predictor = make_torch_tabular_predictor(tabnet_model, tab_preprocessor)
+		tabnet_oof_path = os.path.join(tabnet_dir, "tabnet_oof_preds.npy")
+		if os.path.exists(tabnet_oof_path):
+			try:
+				predictor["oof"] = np.load(tabnet_oof_path)
+			except Exception:
+				pass
+		return predictor
 	except Exception as exc:
 		print(f"✗ Error loading TabNet: {exc}")
 		return None
@@ -187,6 +189,11 @@ def main():
 			"f1_macro": float(f1_macro),
 			"f1_weighted": float(f1_weighted),
 		}
+		try:
+			labels = np.unique(np.concatenate([y_test.values, y_pred]))
+			individual_cms[name] = (labels, confusion_matrix(y_test, y_pred, labels=labels))
+		except Exception:
+			individual_cms[name] = None
 
 	print("\n" + "=" * 70)
 	print("Weighted Ensemble Performance")
@@ -221,6 +228,14 @@ def main():
 			"f1_macro": float(f1_macro),
 			"f1_weighted": float(f1_weighted),
 		}
+		# store confusion matrix for this ensemble method
+		try:
+			labels = np.unique(np.concatenate([y_test.values, y_pred_ensemble]))
+			if 'ensemble_cms' not in locals():
+				ensemble_cms = {}
+			ensemble_cms[method] = (labels, confusion_matrix(y_test, y_pred_ensemble, labels=labels))
+		except Exception:
+			ensemble_cms[method] = None
 
 	print("\n" + "=" * 70)
 	print("Stacking Meta-Ensemble (Class-Aware)")
@@ -243,6 +258,13 @@ def main():
 		stacking_result["accuracy"] = float(accuracy_score(y_test, y_pred_stack))
 	except Exception:
 		stacking_result["accuracy"] = None
+	else:
+		# compute stacking confusion matrix
+		try:
+			labels = np.unique(np.concatenate([y_test.values, y_pred_stack]))
+			stacking_cm = (labels, confusion_matrix(y_test, y_pred_stack, labels=labels))
+		except Exception:
+			stacking_cm = None
 
 	# Save results JSON
 	results = {
@@ -256,6 +278,46 @@ def main():
 	with open(results_path, "w") as f:
 		json.dump(results, f, indent=4)
 	print(f"Results saved to {results_path}")
+
+	# Save confusion matrices
+	# individual model cms
+	try:
+		for name, cm_entry in individual_cms.items():
+			if cm_entry is None:
+				continue
+			labels, cm = cm_entry
+			cm_path = os.path.join(results_dir, f"{os.path.splitext(os.path.basename(__file__))[0]}_individual_{name}_confusion_matrix.csv")
+			pd.DataFrame(cm, index=labels, columns=labels).to_csv(cm_path)
+			# store path
+			if 'individual_paths' not in locals():
+				individual_paths = {}
+			individual_paths[name] = cm_path
+	except Exception:
+		pass
+	# ensemble cms
+	try:
+		for method, cm_entry in (ensemble_cms.items() if 'ensemble_cms' in locals() else []):
+			if cm_entry is None:
+				continue
+			labels, cm = cm_entry
+			cm_path = os.path.join(results_dir, f"{os.path.splitext(os.path.basename(__file__))[0]}_ensemble_{method}_confusion_matrix.csv")
+			pd.DataFrame(cm, index=labels, columns=labels).to_csv(cm_path)
+			if 'ensemble_paths' not in locals():
+				ensemble_paths = {}
+			ensemble_paths[method] = cm_path
+	except Exception:
+		pass
+	# stacking cm
+	try:
+		if 'stacking_cm' in locals() and stacking_cm is not None:
+			labels, cm = stacking_cm
+			cm_path = os.path.join(results_dir, f"{os.path.splitext(os.path.basename(__file__))[0]}_stacking_confusion_matrix.csv")
+			pd.DataFrame(cm, index=labels, columns=labels).to_csv(cm_path)
+			results["stacking_confusion_matrix_path"] = cm_path
+			with open(results_path, "w") as f:
+				json.dump(results, f, indent=4)
+	except Exception:
+		pass
 
 
 if __name__ == "__main__":

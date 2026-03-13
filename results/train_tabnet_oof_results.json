@@ -1,0 +1,5 @@
+{
+    "test_accuracy": 0.4644248979788216,
+    "n_test_samples": 228629,
+    "model_dir": "Models/TabNet"
+}

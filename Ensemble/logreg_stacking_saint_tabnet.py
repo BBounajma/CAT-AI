@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
 from sklearn.linear_model import LogisticRegression
 import json
 
@@ -239,6 +239,10 @@ def main():
     print(f"F1-Macro:  {f1m:.4f}")
     print(f"F1-Weight: {f1w:.4f}")
 
+    # Confusion matrix
+    labels = np.unique(np.concatenate([y_test.values, y_pred]))
+    cm = confusion_matrix(y_test, y_pred, labels=labels)
+
     # --------------------------------------------------------
     # Diagnostics
     # --------------------------------------------------------
@@ -333,7 +337,18 @@ def main():
     results_path = os.path.join(results_dir, f"{os.path.splitext(os.path.basename(__file__))[0]}_results.json")
     with open(results_path, "w") as f:
         json.dump(results, f, indent=4)
-    print(f"Results saved to {results_path}")
+    # Save confusion matrix as CSV
+    try:
+        cm_path = os.path.join(results_dir, f"{os.path.splitext(os.path.basename(__file__))[0]}_confusion_matrix.csv")
+        pd.DataFrame(cm, index=labels, columns=labels).to_csv(cm_path)
+        results["confusion_matrix_path"] = cm_path
+        # rewrite results including confusion matrix path
+        with open(results_path, "w") as f:
+            json.dump(results, f, indent=4)
+        print(f"Results saved to {results_path}")
+        print(f"Confusion matrix saved to {cm_path}")
+    except Exception:
+        print("Failed to save confusion matrix")
     print("=" * 70)
 
 

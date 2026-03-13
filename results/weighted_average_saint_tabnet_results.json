@@ -1,0 +1,45 @@
+{
+    "individual": {
+        "XGBoost": {
+            "accuracy": 0.5132769683635934,
+            "f1_macro": 0.44925165593569594,
+            "f1_weighted": 0.49129040058671186
+        },
+        "Random Forest": {
+            "accuracy": 0.5146722419290641,
+            "f1_macro": 0.44626762849084417,
+            "f1_weighted": 0.4894402615929348
+        },
+        "SAINT": {
+            "accuracy": 0.44549466603099347,
+            "f1_macro": 0.41657032049575876,
+            "f1_weighted": 0.4533527861998158
+        },
+        "TabNet": {
+            "accuracy": 0.4644205240804972,
+            "f1_macro": 0.3551111208512646,
+            "f1_weighted": 0.4105472780841178
+        }
+    },
+    "ensembles": {
+        "uniform": {
+            "accuracy": 0.5064361913842951,
+            "f1_macro": 0.4445098564372234,
+            "f1_weighted": 0.48792197434359613
+        },
+        "grid_search": {
+            "accuracy": 0.5066898774871079,
+            "f1_macro": 0.44962947717060064,
+            "f1_weighted": 0.4921504833870242
+        },
+        "optimization": {
+            "accuracy": 0.5064361913842951,
+            "f1_macro": 0.4445098564372234,
+            "f1_weighted": 0.48792197434359613
+        }
+    },
+    "stacking": {
+        "accuracy": 0.4997091357614301
+    },
+    "stacking_confusion_matrix_path": "/workspace/project/results/weighted_average_saint_tabnet_stacking_confusion_matrix.csv"
+}
